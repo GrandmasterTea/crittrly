@@ -21,20 +21,28 @@ const PORT       = process.env.PORT        || 3000;
 const CJ_EMAIL   = process.env.CJ_EMAIL    || 'CJ5405524';
 const CJ_PASS    = process.env.CJ_PASSWORD || '1184c51994b8447889809d80e70464a6';
 const STATIC_DIR = process.env.STATIC_DIR  || path.join(__dirname, '..', 'crittrly');
-// DB config — supports Railway MySQL plugin vars (MYSQL_*) OR custom vars (DB_*)
-// Railway MySQL plugin injects: MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
-// You can also set DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT manually
-const DB_HOST    = process.env.MYSQL_HOST     || process.env.DB_HOST || 'localhost';
-const DB_USER    = process.env.MYSQL_USER     || process.env.DB_USER || 'crittrly_admin';
-const DB_PASS    = process.env.MYSQL_PASSWORD || process.env.DB_PASS || '@MazdaDriver';
-const DB_NAME    = process.env.MYSQL_DATABASE || process.env.DB_NAME || 'crittrly_1';
-const DB_PORT    = parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306');
+// DB config — three modes:
+// 1. BRIDGE_URL set → use PHP bridge on Verpex (no port 3306 needed)
+// 2. MYSQL_* set    → use Railway MySQL plugin
+// 3. DB_* set       → use direct MySQL connection
+const DB_HOST     = process.env.MYSQL_HOST     || process.env.DB_HOST || 'localhost';
+const DB_USER     = process.env.MYSQL_USER     || process.env.DB_USER || 'crittrly_admin';
+const DB_PASS     = process.env.MYSQL_PASSWORD || process.env.DB_PASS || '@MazdaDriver';
+const DB_NAME     = process.env.MYSQL_DATABASE || process.env.DB_NAME || 'crittrly_1';
+const DB_PORT     = parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306');
+const BRIDGE_URL  = process.env.BRIDGE_URL  || ''; // e.g. https://crittrly.com/db-bridge.php
+const BRIDGE_KEY  = process.env.BRIDGE_KEY  || 'change-this-to-something-secret-crittrly-2025';
 const ADMIN_KEY  = process.env.ADMIN_KEY   || 'crittrly-admin-2025';
 const CJ_API     = 'developers.cjdropshipping.com';
 const CACHE_TTL  = 25 * 60 * 1000;
 
 // ── DATABASE ──────────────────────────────────────────────────────────────────
+// Supports two modes:
+//   BRIDGE mode: BRIDGE_URL set → calls PHP script on Verpex over HTTPS
+//   DIRECT mode: connects to MySQL directly (Railway MySQL plugin or any host)
+
 let _db;
+
 async function getDb() {
   if (_db) return _db;
   _db = await mysql.createPool({
@@ -42,14 +50,35 @@ async function getDb() {
     user: DB_USER, password: DB_PASS, database: DB_NAME,
     waitForConnections: true, connectionLimit: 10, charset: 'utf8mb4',
   });
-  console.log('[DB] Pool created →', DB_NAME, '@', DB_HOST);
+  console.log('[DB] Direct pool created →', DB_NAME, '@', DB_HOST);
   return _db;
 }
 
-async function initTables() {
-  const pool = await getDb();
+async function dbQuery(sql, params) {
+  params = params || [];
 
-  await pool.execute(`
+  if (BRIDGE_URL) {
+    // ── BRIDGE MODE: call PHP script on Verpex ──────────────────────────────
+    const res = await fetch(BRIDGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Bridge-Key': BRIDGE_KEY },
+      body: JSON.stringify({ sql, params }),
+    });
+    if (!res.ok) throw new Error('Bridge HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    // Return in mysql2-compatible format: [rows]
+    if (Array.isArray(data.rows)) return [data.rows];
+    return [{ affectedRows: data.affected || 0, insertId: data.insertId || 0 }];
+  }
+
+  // ── DIRECT MODE: use mysql2 pool ────────────────────────────────────────────
+  const pool = await getDb();
+  return pool.execute(sql, params);
+}
+
+async function initTables() {
+  await dbQuery(`
     CREATE TABLE IF NOT EXISTS orders (
       id            VARCHAR(40)   PRIMARY KEY,
       customer_name VARCHAR(200)  NOT NULL,
@@ -76,7 +105,7 @@ async function initTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
-  await pool.execute(`
+  await dbQuery(`
     CREATE TABLE IF NOT EXISTS settings (
       k   VARCHAR(100) PRIMARY KEY,
       v   TEXT         NOT NULL,
@@ -84,7 +113,7 @@ async function initTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
-  await pool.execute(`
+  await dbQuery(`
     INSERT IGNORE INTO settings (k,v) VALUES
     ('store_name',      'Crittrly'),
     ('store_email',     'hello@crittrly.com'),
@@ -242,7 +271,8 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/status' && m === 'GET') {
     return jsn(res, {
       result: true,
-      db: !!_db,
+      mode: BRIDGE_URL ? 'bridge' : 'direct',
+      db: BRIDGE_URL ? 'bridge' : !!_db,
       cjToken: !!_cjTok && Date.now() < _cjExp,
       cache: _cache.size,
       uptime: Math.floor(process.uptime()),
@@ -305,8 +335,7 @@ const server = http.createServer(async (req, res) => {
     if (missing.length) return err(res, 'Missing: ' + missing.join(', '), 400);
 
     try {
-      const pool = await getDb();
-      await pool.execute(
+      await dbQuery(
         `INSERT INTO orders
            (id,customer_name,email,phone,address,address2,city,province,zip,
             country_code,country,items,subtotal,shipping_cost,discount,total,status)
@@ -335,8 +364,7 @@ const server = http.createServer(async (req, res) => {
   const ordM = pn.match(/^\/api\/orders\/([^/]+)$/);
   if (ordM && m === 'GET') {
     try {
-      const pool = await getDb();
-      const [rows] = await pool.execute('SELECT * FROM orders WHERE id = ?', [ordM[1]]);
+      const [rows] = await dbQuery('SELECT * FROM orders WHERE id = ?', [ordM[1]]);
       if (!rows.length) return err(res, 'Order not found', 404);
       const o = rows[0];
       o.items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
@@ -365,8 +393,8 @@ const server = http.createServer(async (req, res) => {
         const s = '%' + search + '%';
         params.push(s, s, s);
       }
-      const [rows]    = await pool.execute(`SELECT * FROM orders WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`, params);
-      const [[count]] = await pool.execute(`SELECT COUNT(*) AS n FROM orders WHERE ${where}`, params);
+      const [rows]    = await dbQuery(`SELECT * FROM orders WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`, params);
+      const [[count]] = await dbQuery(`SELECT COUNT(*) AS n FROM orders WHERE ${where}`, params);
       rows.forEach(o => { o.items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items; });
       return jsn(res, { result: true, orders: rows, total: count.n, page, limit });
     } catch (e) { return err(res, e.message); }
@@ -376,11 +404,10 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/admin/stats' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     try {
-      const pool = await getDb();
-      const [[rev]]     = await pool.execute('SELECT COALESCE(SUM(total),0) AS v FROM orders');
-      const [[total]]   = await pool.execute('SELECT COUNT(*) AS v FROM orders');
-      const [[pending]] = await pool.execute('SELECT COUNT(*) AS v FROM orders WHERE status IN ("pending","processing")');
-      const [[unfulfilled]] = await pool.execute('SELECT COUNT(*) AS v FROM orders WHERE status = "pending"');
+      const [[rev]]     = await dbQuery('SELECT COALESCE(SUM(total),0) AS v FROM orders');
+      const [[total]]   = await dbQuery('SELECT COUNT(*) AS v FROM orders');
+      const [[pending]] = await dbQuery('SELECT COUNT(*) AS v FROM orders WHERE status IN ("pending","processing")');
+      const [[unfulfilled]] = await dbQuery('SELECT COUNT(*) AS v FROM orders WHERE status = "pending"');
       return jsn(res, {
         result: true,
         revenue:     parseFloat(rev.v),
@@ -404,8 +431,7 @@ const server = http.createServer(async (req, res) => {
     if (!sets.length) return err(res, 'Nothing to update', 400);
     vals.push(adminOrdM[1]);
     try {
-      const pool = await getDb();
-      await pool.execute(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, vals);
+      await dbQuery(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, vals);
       return jsn(res, { result: true });
     } catch (e) { return err(res, e.message); }
   }
@@ -414,8 +440,7 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/admin/settings' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     try {
-      const pool = await getDb();
-      const [rows] = await pool.execute('SELECT k, v FROM settings');
+      const [rows] = await dbQuery('SELECT k, v FROM settings');
       const out = {};
       rows.forEach(r => { out[r.k] = r.v; });
       return jsn(res, { result: true, settings: out });
@@ -429,7 +454,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const pool = await getDb();
       for (const [k, v] of Object.entries(b)) {
-        await pool.execute(
+        await dbQuery(
           'INSERT INTO settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=?, ts=NOW()',
           [k, String(v), String(v)]
         );
