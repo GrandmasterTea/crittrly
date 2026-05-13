@@ -227,10 +227,21 @@ const PET_Q = {
     'rabbit chew toy', 'hamster bedding nest', 'guinea pig toy',
   ],
   all: [
-    'dog chew toy', 'cat scratcher post', 'parrot bird toy',
-    'hamster exercise wheel', 'aquarium fish decoration', 'reptile hide cave',
-    'dog harness leash', 'cat water fountain', 'dog food bowl stainless',
-    'cat tree tower', 'dog puzzle toy', 'rabbit chew toy',
+    // Dogs
+    'dog chew toy', 'dog harness', 'dog leash', 'dog bed mat',
+    'dog food bowl', 'dog puzzle toy', 'dog grooming brush', 'dog automatic feeder',
+    // Cats
+    'cat scratcher post', 'cat teaser wand toy', 'cat tree tower',
+    'cat water fountain', 'cat window hammock', 'cat litter box',
+    // Birds
+    'parrot bird toy', 'bird cage perch', 'bird swing toy',
+    // Reptiles
+    'reptile terrarium decoration', 'reptile heat lamp', 'gecko hide cave',
+    // Fish
+    'aquarium fish decoration', 'fish tank ornament', 'aquarium led light',
+    // Small pets
+    'hamster exercise wheel', 'hamster hideout house', 'rabbit chew toy',
+    'guinea pig toy', 'small animal tunnel',
   ],
 };
 
@@ -356,59 +367,99 @@ const server = http.createServer(async (req, res) => {
 
   // ── /api/pet-products?pet=dog&page=1&limit=12 ────────────────────────────
   if (pn === '/api/pet-products' && m === 'GET') {
-    const pet     = q.pet || 'all';
-    const page    = parseInt(q.page) || 1;
-    const limit   = parseInt(q.limit) || 12;
-    const queries = PET_Q[pet] || PET_Q.all;
+    const pet   = q.pet || 'all';
+    const page  = parseInt(q.page) || 1;
+    const limit = parseInt(q.limit) || 12;
 
     try {
-      // Run 3 search terms in parallel to get variety and enough to filter from
-      const startIdx = ((page - 1) * 3) % queries.length;
-      const terms = [
-        queries[startIdx % queries.length],
-        queries[(startIdx + 1) % queries.length],
-        queries[(startIdx + 2) % queries.length],
-      ];
-
-      const allResults = await Promise.all(
-        terms.map(term => cjSearch(term, 1, limit * 2).catch(() => null))
-      );
-
       const seen = new Set();
       let products = [];
 
-      // First pass: strict pet filter + must have image
-      for (const data of allResults) {
-        if (!data || !data.data) continue;
-        for (const p of (data.data.list || [])) {
-          if (seen.has(p.pid)) continue;
-          seen.add(p.pid);
-          if (!isPetProduct(p)) continue;
-          const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
-          if (!img) continue;
-          products.push(shapeProduct(p, pet === 'all' ? null : pet));
-          if (products.length >= limit) break;
-        }
-        if (products.length >= limit) break;
-      }
+      if (pet === 'all') {
+        // Pull from ALL 6 categories in parallel — 2 items per cat = 12 total
+        const CATS = ['dog','cat','bird','reptile','fish','small'];
+        const perCat = Math.ceil(limit / CATS.length);
+        const offset = ((page - 1) * 2) % 4; // rotate which terms we use each page
 
-      // Second pass: if we're still short, relax the pet filter but keep image requirement
-      if (products.length < limit) {
+        const catResults = await Promise.all(
+          CATS.map(cat => {
+            const terms = PET_Q[cat];
+            const term  = terms[(offset + CATS.indexOf(cat)) % terms.length];
+            return cjSearch(term, 1, perCat * 4).catch(() => null);
+          })
+        );
+
+        // Take perCat products from each category
+        for (let i = 0; i < CATS.length; i++) {
+          const data = catResults[i];
+          const cat  = CATS[i];
+          if (!data || !data.data) continue;
+          let taken = 0;
+          for (const p of (data.data.list || [])) {
+            if (seen.has(p.pid)) continue;
+            seen.add(p.pid);
+            if (!isPetProduct(p)) continue;
+            const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
+            if (!img) continue;
+            products.push(shapeProduct(p, cat));
+            taken++;
+            if (taken >= perCat) break;
+          }
+        }
+
+        // Shuffle so it's not always dog/cat/bird/reptile/fish/small in order
+        for (let i = products.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [products[i], products[j]] = [products[j], products[i]];
+        }
+
+      } else {
+        // Single category — run 3 terms in parallel
+        const queries  = PET_Q[pet] || PET_Q.all;
+        const startIdx = ((page - 1) * 3) % queries.length;
+        const terms    = [
+          queries[startIdx % queries.length],
+          queries[(startIdx + 1) % queries.length],
+          queries[(startIdx + 2) % queries.length],
+        ];
+
+        const allResults = await Promise.all(
+          terms.map(term => cjSearch(term, 1, limit * 3).catch(() => null))
+        );
+
+        // First pass — strict pet filter + image required
         for (const data of allResults) {
           if (!data || !data.data) continue;
           for (const p of (data.data.list || [])) {
             if (seen.has(p.pid)) continue;
             seen.add(p.pid);
+            if (!isPetProduct(p)) continue;
             const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
             if (!img) continue;
-            products.push(shapeProduct(p, pet === 'all' ? null : pet));
+            products.push(shapeProduct(p, pet));
             if (products.length >= limit) break;
           }
           if (products.length >= limit) break;
         }
+
+        // Second pass — if short, relax pet filter but keep image requirement
+        if (products.length < limit) {
+          for (const data of allResults) {
+            if (!data || !data.data) continue;
+            for (const p of (data.data.list || [])) {
+              if (seen.has(p.pid)) continue;
+              seen.add(p.pid);
+              const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
+              if (!img) continue;
+              products.push(shapeProduct(p, pet));
+              if (products.length >= limit) break;
+            }
+            if (products.length >= limit) break;
+          }
+        }
       }
 
-      console.log('[CJ] pet=' + pet + ' terms=[' + terms.join(',') + '] → ' + products.length + ' products');
+      console.log('[CJ] pet=' + pet + ' page=' + page + ' → ' + products.length + ' products');
       return jsn(res, { result: true, products, total: products.length });
     } catch (e) {
       console.error('[CJ] pet-products error:', e.message);
