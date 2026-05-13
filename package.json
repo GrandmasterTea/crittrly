@@ -1,0 +1,16 @@
+{
+  "name": "crittrly-server",
+  "version": "3.0.0",
+  "description": "Crittrly production server — CJ proxy + MySQL orders + auto-fulfillment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
