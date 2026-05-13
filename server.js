@@ -130,19 +130,35 @@ let _cjTok = null, _cjExp = 0;
 
 async function cjToken() {
   if (_cjTok && Date.now() < _cjExp) return _cjTok;
-  console.log('[CJ] Refreshing token...');
+
+  // CJ API v2.0 uses apiKey format: "CJUserNum@api@secret"
+  // Build the full key — if CJ_PASS already has @api@ use it directly,
+  // otherwise combine CJ_EMAIL + @api@ + CJ_PASS
+  const apiKey = CJ_PASS.includes('@api@')
+    ? CJ_PASS
+    : (CJ_EMAIL + '@api@' + CJ_PASS);
+
+  console.log('[CJ] Authenticating with apiKey:', apiKey.substring(0, 20) + '...');
+
   try {
-    const res = await cjReq('POST', '/api2.0/v1/authentication/getAccessToken',
-      { email: CJ_EMAIL, password: CJ_PASS });
-    if (res.result && res.data?.accessToken) {
+    const res = await cjReq('POST', '/api2.0/v1/authentication/getAccessToken', { apiKey });
+    console.log('[CJ] Auth response:', JSON.stringify(res).substring(0, 300));
+
+    if (res.result && res.data && res.data.accessToken) {
       _cjTok = res.data.accessToken;
       _cjExp = Date.now() + 22 * 3600 * 1000;
-      console.log('[CJ] ✅ Token obtained');
+      console.log('[CJ] ✅ Token obtained successfully');
       return _cjTok;
     }
-  } catch (e) { console.error('[CJ] Token error:', e.message); }
-  // fallback — some accounts use the key directly
-  _cjTok = CJ_PASS;
+    console.warn('[CJ] Auth failed — response was:', JSON.stringify(res).substring(0, 200));
+  } catch (e) {
+    console.error('[CJ] Auth exception:', e.message);
+  }
+
+  // Last resort: use the apiKey string itself as the bearer token
+  // (some CJ integrations work this way)
+  console.log('[CJ] Falling back to apiKey as bearer token');
+  _cjTok = apiKey;
   _cjExp = Date.now() + 3600 * 1000;
   return _cjTok;
 }
