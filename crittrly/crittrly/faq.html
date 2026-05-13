@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAQ – Crittrly</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=4">
+<style>
+.faq-item{border-bottom:1px solid var(--border);}
+.faq-q{display:flex;justify-content:space-between;align-items:center;padding:20px 0;font-weight:600;font-size:.92rem;}
+.faq-q:hover{color:var(--orange);}
+.faq-arrow{font-size:.7rem;transition:transform .25s;color:var(--muted);}
+.faq-item.open .faq-arrow{transform:rotate(180deg);}
+.faq-a{display:none;padding-bottom:18px;font-size:.87rem;color:var(--muted);line-height:1.75;font-weight:300;}
+.faq-item.open .faq-a{display:block;}
+</style>
+</head>
+<body>
+<nav id="mainNav">
+  <a href="index.html" class="logo"><div class="logo-dot"></div>Crittrly</a>
+  <ul class="nav-links"><li><a href="shop.html">Shop</a></li><li><a href="tracking.html">Track Order</a></li><li><a href="contact.html">Contact</a></li></ul>
+  <div class="nav-right">
+    <a href="wishlist.html" class="icon-btn">♡ <span id="wishlistCount" class="nav-badge">0</span></a>
+    <button class="cart-btn" onclick="openCart()">🛒 Cart <span class="cart-count" id="cartCount">0</span></button>
+  </div>
+</nav>
+
+<div class="shop-hero"><div class="container"><h1>Frequently Asked Questions</h1></div></div>
+
+<div class="container" style="max-width:800px;padding:60px 32px 80px;">
+  <div class="eyebrow" style="margin-bottom:12px;">Shipping & Delivery</div>
+  <h2 style="margin-bottom:32px;">Everything You Need to Know</h2>
+
+  ${[
+    {q:'How long does shipping take?',a:'Most orders arrive in 7–14 business days \'s global warehouse network. Express shipping (5–8 days) is available at checkout for an additional $7.99.'},
+    {q:'Where do orders ship from?',a:'Crittrly ships from multiple warehouse locations across the US, Europe, and Asia — so your order always comes from the closest available location, keeping delivery times as short as possible.'},
+    {q:'Do you ship internationally?',a:'Yes! We ship to 200+ countries worldwide. Delivery times and costs may vary by destination. Most international orders arrive within 10–18 business days.'},
+    {q:'Is shipping free?',a:'Yes — standard shipping is free on all orders over $35. Orders under $35 also qualify for free standard shipping. Express shipping is $7.99 regardless of order size.'},
+    {q:'Will I get a tracking number?',a:'Yes. Once your order ships, you\'ll receive a tracking number via email within 1–2 business days. You can also track your order anytime at crittrly.com/tracking.html'},
+    {q:'Can I change or cancel my order?',a:'Orders can be modified or cancelled within 1 hour of placement. After that, your order will have already entered our fulfillment system. Contact us immediately at hello@crittrly.com if you need to make changes.'},
+    {q:'What is your return policy?',a:'We offer 30-day hassle-free returns. If you\'re not satisfied for any reason, contact us at hello@crittrly.com and we\'ll arrange a full refund or replacement at no cost to you.'},
+    {q:'Are your products safe for pets?',a:'Absolutely. Every product we stock is carefully reviewed for pet safety. We work only with reputable suppliers with strong safety records and thousands of verified reviews.'},
+    {q:'My order arrived damaged — what do I do?',a:'We\'re sorry to hear that! Email hello@crittrly.com with your order ID and a photo of the damage within 7 days of delivery. We\'ll send a replacement or issue a full refund immediately.'},
+    {q:'How do I contact customer support?',a:'Email us at hello@crittrly.com. We respond within 24 hours, Monday–Friday. For urgent order issues, include your order ID in the subject line for priority handling.'},
+  ].map(f => `
+  <div class="faq-item" onclick="toggleFaq(this)">
+    <div class="faq-q">${f.q} <span class="faq-arrow">▾</span></div>
+    <div class="faq-a">${f.a}</div>
+  </div>`).join('')}
+
+  <div style="margin-top:48px;background:var(--ink);border-radius:var(--r);padding:32px;text-align:center;">
+    <div style="font-size:1.8rem;margin-bottom:12px;">💬</div>
+    <h3 style="font-family:'Unbounded',sans-serif;font-size:.9rem;color:#fff;margin-bottom:8px;">Still have questions?</h3>
+    <p style="font-size:.85rem;color:rgba(255,255,255,.5);margin-bottom:20px;">Our team is ready to help.</p>
+    <a href="contact.html" class="btn-primary">Contact Support →</a>
+  </div>
+</div>
+
+<footer style="background:var(--ink);padding:32px 0;">
+  <div class="container footer-bottom-inner" style="border:none;padding-top:0;">
+    <p style="color:rgba(255,255,255,.35);font-size:.78rem;">© 2025 Crittrly.com · All rights reserved</p>
+    
+  </div>
+</footer>
+
+<div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+<div class="cart-drawer" id="cartDrawer">
+  <div class="cart-drawer-head"><h3>Your Cart 🛒</h3><button class="close-btn" onclick="closeCart()">✕</button></div>
+  <div class="cart-drawer-body" id="cartBody"></div>
+  <div class="cart-drawer-foot" id="cartFoot"></div>
+</div>
+<div class="toast" id="toast"><span class="toast-dot" id="toastDot"></span><span id="toastMsg"></span></div>
+<script src="js/data.js"></script><script src="js/cart.js"></script><script src="js/main.js"></script>
+<script>function toggleFaq(el){el.classList.toggle('open');}</script>
+</body>
+</html>

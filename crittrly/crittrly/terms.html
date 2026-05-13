@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms of Service – Crittrly</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=4">
+</head>
+<body>
+<nav id="mainNav">
+  <a href="index.html" class="logo"><div class="logo-dot"></div>Crittrly</a>
+  <ul class="nav-links"><li><a href="shop.html">Shop</a></li></ul>
+  <div class="nav-right"><button class="cart-btn" onclick="openCart()">🛒 Cart <span class="cart-count" id="cartCount">0</span></button></div>
+</nav>
+<div class="shop-hero"><div class="container"><h1>Terms of Service</h1><p style="color:rgba(255,255,255,.5);margin-top:6px;font-size:.85rem;">Last updated: January 2025</p></div></div>
+<div class="container" style="max-width:800px;padding:60px 32px 80px;">
+  <div style="background:#fff;border-radius:var(--r);border:1.5px solid var(--border);padding:40px;font-size:.88rem;line-height:1.8;color:var(--muted);">
+    <style>.pol h3{font-family:'Unbounded',sans-serif;font-size:.82rem;color:var(--ink);margin:28px 0 8px;} .pol p{margin-bottom:12px;}</style>
+    <div class="pol">
+      <p>By using Crittrly.com, you agree to these Terms of Service. Please read them carefully.</p>
+      <h3>Orders & Payment</h3>
+      <p>By placing an order, you represent that you are of legal age and authorized to use the payment method provided. We reserve the right to refuse or cancel orders at our discretion.</p>
+      <h3>Shipping & Delivery</h3>
+      <p>Delivery estimates are provided in good faith but are not guaranteed. Crittrly is not responsible for delays caused by customs, carriers, or circumstances outside our control.</p>
+      <h3>Returns</h3>
+      <p>We offer a 30-day return policy as described in our Returns Policy page. Items must be unused and in original condition where applicable.</p>
+      <h3>Product Descriptions</h3>
+      <p>We make every effort to accurately describe products. Colors may vary slightly from photos due to monitor settings. If you receive an item materially different from its description, contact us for a full refund.</p>
+      <h3>Intellectual Property</h3>
+      <p>All content on Crittrly.com (logos, copy, design) is owned by Crittrly and may not be reproduced without permission.</p>
+      <h3>Limitation of Liability</h3>
+      <p>Crittrly's liability is limited to the value of your order. We are not liable for indirect or consequential damages.</p>
+      <h3>Changes to Terms</h3>
+      <p>We may update these terms at any time. Continued use of the site constitutes acceptance of updated terms.</p>
+      <h3>Contact</h3>
+      <p>Questions? Email hello@crittrly.com.</p>
+    </div>
+  </div>
+</div>
+<footer style="background:var(--ink);padding:32px 0;"><div class="container footer-bottom-inner" style="border:none;padding-top:0;"><p style="color:rgba(255,255,255,.35);font-size:.78rem;">© 2025 Crittrly.com</p></div></footer>
+<div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+<div class="cart-drawer" id="cartDrawer"><div class="cart-drawer-head"><h3>Your Cart 🛒</h3><button class="close-btn" onclick="closeCart()">✕</button></div><div class="cart-drawer-body" id="cartBody"></div><div class="cart-drawer-foot" id="cartFoot"></div></div>
+<div class="toast" id="toast"><span class="toast-dot" id="toastDot"></span><span id="toastMsg"></span></div>
+<script src="js/data.js"></script><script src="js/cart.js"></script><script src="js/main.js"></script>
+</body>
+</html>

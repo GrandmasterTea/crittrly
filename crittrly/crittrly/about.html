@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About – Crittrly</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=4">
+</head>
+<body>
+<nav id="mainNav">
+  <a href="index.html" class="logo"><div class="logo-dot"></div>Crittrly</a>
+  <ul class="nav-links"><li><a href="shop.html">Shop</a></li><li><a href="tracking.html">Track Order</a></li><li><a href="contact.html">Contact</a></li></ul>
+  <div class="nav-right">
+    <a href="wishlist.html" class="icon-btn">♡ <span id="wishlistCount" class="nav-badge">0</span></a>
+    <button class="cart-btn" onclick="openCart()">🛒 Cart <span class="cart-count" id="cartCount">0</span></button>
+  </div>
+</nav>
+
+<div class="shop-hero"><div class="container"><h1>About Crittrly</h1><p style="color:rgba(255,255,255,.5);margin-top:8px;font-size:.9rem;">Premium pet supplies for every critter on the planet.</p></div></div>
+
+<section style="padding:80px 0;">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;margin-bottom:80px;">
+      <div>
+        <div class="eyebrow">Our story</div>
+        <h2>Built by pet lovers,<br>for pet lovers.</h2>
+        <p style="color:var(--muted);font-size:.92rem;line-height:1.8;margin-top:16px;font-weight:300;">Crittrly was founded on a simple belief: your pet deserves the best, and finding it shouldn't be hard or expensive. We curate top-rated products from thousands of suppliers worldwide, powered by our fulfillment network.</p>
+        <p style="color:var(--muted);font-size:.92rem;line-height:1.8;margin-top:14px;font-weight:300;">Every product in our store has been carefully selected for quality, safety, and value. From interactive dog toys to reptile terrariums — if we wouldn't give it to our own pets, it doesn't make the cut.</p>
+        <a href="shop.html" class="btn-primary" style="margin-top:28px;display:inline-flex;">Shop Now →</a>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div style="background:var(--ink);border-radius:var(--r);padding:32px;text-align:center;"><div style="font-size:3rem;margin-bottom:10px;">🐕</div><div style="font-family:'Unbounded',sans-serif;font-size:1.4rem;font-weight:900;color:#fff;">12K+</div><div style="font-size:.75rem;color:rgba(255,255,255,.5);">Happy pet parents</div></div>
+        <div style="background:var(--orange);border-radius:var(--r);padding:32px;text-align:center;"><div style="font-size:3rem;margin-bottom:10px;">🌍</div><div style="font-family:'Unbounded',sans-serif;font-size:1.4rem;font-weight:900;color:#fff;">200+</div><div style="font-size:.75rem;color:rgba(255,255,255,.7);">Countries served</div></div>
+        <div style="background:var(--yellow);border-radius:var(--r);padding:32px;text-align:center;"><div style="font-size:3rem;margin-bottom:10px;">📦</div><div style="font-family:'Unbounded',sans-serif;font-size:1.4rem;font-weight:900;color:var(--ink);">500+</div><div style="font-size:.75rem;color:rgba(13,13,13,.6);">Products curated</div></div>
+        <div style="background:var(--green);border-radius:var(--r);padding:32px;text-align:center;"><div style="font-size:3rem;margin-bottom:10px;">⭐</div><div style="font-family:'Unbounded',sans-serif;font-size:1.4rem;font-weight:900;color:#fff;">4.9</div><div style="font-size:.75rem;color:rgba(255,255,255,.6);">Average rating</div></div>
+      </div>
+    </div>
+    <div class="why-grid">
+      <div class="why-card"><div class="why-icon">🔍</div><h3>Carefully Curated</h3><p>We test and review every product before listing it. No junk, no cheap knockoffs.</p></div>
+      <div class="why-card"><div class="why-icon">🚀</div><h3>Fast, Global Fulfillment</h3><p>Multiple global warehouses ensure your order gets there fast, from the closest location.</p></div>
+      <div class="why-card"><div class="why-icon">💬</div><h3>Real Support</h3><p>Got an issue? Email us. We respond within 24 hours and make things right, every time.</p></div>
+      <div class="why-card"><div class="why-icon">🔄</div><h3>30-Day Returns</h3><p>Not satisfied? Full refund or replacement — hassle-free, within 30 days of delivery.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer style="background:var(--ink);padding:32px 0;margin-top:40px;">
+  <div class="container footer-bottom-inner" style="border:none;padding-top:0;">
+    <p style="color:rgba(255,255,255,.35);font-size:.78rem;">© 2025 Crittrly.com · All rights reserved</p>
+    
+    <div class="pay-icons"><span class="pay-icon">VISA</span><span class="pay-icon">MC</span><span class="pay-icon">PayPal</span></div>
+  </div>
+</footer>
+
+<div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+<div class="cart-drawer" id="cartDrawer">
+  <div class="cart-drawer-head"><h3>Your Cart 🛒</h3><button class="close-btn" onclick="closeCart()">✕</button></div>
+  <div class="cart-drawer-body" id="cartBody"></div>
+  <div class="cart-drawer-foot" id="cartFoot"></div>
+</div>
+<div class="toast" id="toast"><span class="toast-dot" id="toastDot"></span><span id="toastMsg"></span></div>
+<script src="js/data.js"></script><script src="js/cart.js"></script><script src="js/main.js"></script>
+</body>
+</html>

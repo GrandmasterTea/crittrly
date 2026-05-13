@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wishlist – Crittrly</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=4">
+</head>
+<body>
+<div class="announce-bar"><span>🎉 Use code <strong>CRITTRLY15</strong> for 15% off your first order</span></div>
+<nav id="mainNav">
+  <a href="index.html" class="logo"><div class="logo-dot"></div>Crittrly</a>
+  <ul class="nav-links"><li><a href="shop.html">Shop</a></li><li><a href="about.html">About</a></li></ul>
+  <div class="nav-right">
+    <a href="wishlist.html" class="icon-btn" style="color:var(--orange);">♥ <span id="wishlistCount" class="nav-badge">0</span></a>
+    <button class="cart-btn" onclick="openCart()">🛒 Cart <span class="cart-count" id="cartCount">0</span></button>
+  </div>
+</nav>
+
+<div class="shop-hero"><div class="container"><div class="shop-breadcrumb"><a href="index.html">Home</a> → Wishlist</div><h1>My Wishlist ♥</h1></div></div>
+
+<div class="container" style="padding:48px 0 80px;">
+  <div id="wishlistContent"></div>
+</div>
+
+<div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+<div class="cart-drawer" id="cartDrawer">
+  <div class="cart-drawer-head"><h3>Your Cart 🛒</h3><button class="close-btn" onclick="closeCart()">✕</button></div>
+  <div class="cart-drawer-body" id="cartBody"></div>
+  <div class="cart-drawer-foot" id="cartFoot"></div>
+</div>
+<div class="modal-overlay" id="qvOverlay" onclick="closeQuickView()"></div>
+<div class="quick-view-modal" id="qvModal"></div>
+<div class="toast" id="toast"><span class="toast-dot" id="toastDot"></span><span id="toastMsg"></span></div>
+
+<script src="js/data.js"></script>
+<script src="js/cart.js"></script>
+<script src="js/main.js"></script>
+<script>
+function renderWishlist() {
+  const ids = getWishlist();
+  const el = document.getElementById('wishlistContent');
+  if (!ids.length) {
+    el.innerHTML = `<div style="text-align:center;padding:80px 0;">
+      <div style="font-size:3.5rem;margin-bottom:16px;">♡</div>
+      <h2 style="font-family:'Unbounded',sans-serif;margin-bottom:10px;">No saved items yet</h2>
+      <p style="color:var(--muted);margin-bottom:24px;">Heart products while browsing to save them here.</p>
+      <a href="shop.html" class="btn-primary">Browse Products →</a>
+    </div>`;
+    return;
+  }
+  const products = ids.map(id => getProductById(id)).filter(Boolean);
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;">
+      <div style="font-size:.9rem;color:var(--muted);">${products.length} saved item${products.length!==1?'s':''}</div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-primary" onclick="addAllToCart()">Add All to Cart</button>
+        <button class="btn-ghost" onclick="clearWishlist()">Clear Wishlist</button>
+      </div>
+    </div>
+    <div class="products-grid">${products.map(p => renderProductCard(p)).join('')}</div>
+  `;
+}
+
+function addAllToCart() {
+  getWishlist().forEach(id => addToCart(id, 1));
+  showToast(`✅ All ${getWishlist().length} items added to cart!`);
+}
+
+function clearWishlist() {
+  if (!confirm('Clear your entire wishlist?')) return;
+  saveWishlist([]);
+  renderWishlist();
+}
+
+document.addEventListener('DOMContentLoaded', renderWishlist);
+</script>
+</body>
+</html>

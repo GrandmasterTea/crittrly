@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crittrly — Premium Pet Supplies for Every Critter</title>
+<meta name="description" content="Crittrly curates premium, design-forward pet products for dogs, cats, birds, reptiles and more. Free shipping $35+, 30-day returns.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=4">
+</head>
+<body>
+
+<div class="announce-bar" id="announceBar">
+  Free shipping on orders <strong>$35+</strong> &nbsp;·&nbsp; New customers: <strong>CRITTRLY15</strong> for 15% off
+  <button class="announce-close" onclick="this.parentElement.style.display='none'">✕</button>
+</div>
+
+<nav id="mainNav">
+  <a href="index.html" class="logo">Crittr<em class="logo-mark">ly</em></a>
+  <div class="nav-center">
+    <ul class="nav-links">
+      <li class="has-mega">
+        <a href="shop.html">Shop</a>
+        <div class="mega-menu">
+          <div class="mega-col">
+            <h4>By Pet</h4>
+            <a href="shop.html?cat=dog">🐕 Dogs</a>
+            <a href="shop.html?cat=cat">🐈 Cats</a>
+            <a href="shop.html?cat=bird">🦜 Birds</a>
+            <a href="shop.html?cat=reptile">🦎 Reptiles</a>
+            <a href="shop.html?cat=fish">🐠 Fish</a>
+            <a href="shop.html?cat=small">🐹 Small Pets</a>
+          </div>
+          <div class="mega-col">
+            <h4>By Type</h4>
+            <a href="shop.html?type=toys">Toys & Play</a>
+            <a href="shop.html?type=beds">Beds & Comfort</a>
+            <a href="shop.html?type=feeders">Feeders & Bowls</a>
+            <a href="shop.html?type=health">Health & Wellness</a>
+            <a href="shop.html?type=accessories">Accessories</a>
+            <a href="shop.html?type=grooming">Grooming</a>
+          </div>
+          <div class="mega-col">
+            <h4>Collections</h4>
+            <a href="shop.html?collection=new">New Arrivals</a>
+            <a href="shop.html?collection=hot">Best Sellers</a>
+            <a href="shop.html?collection=sale">On Sale</a>
+          </div>
+          <div class="mega-feat">
+            <div class="mega-feat-emoji">🏆</div>
+            <strong>This Week's Top Pick</strong>
+            <span>Interactive Puzzle Feeder</span>
+          </div>
+        </div>
+      </li>
+      <li><a href="shop.html?collection=new">New Arrivals</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+  </div>
+  <div class="nav-right">
+    <div class="nav-search-wrap">
+      <button class="nav-icon-btn" onclick="toggleSearch()" title="Search">🔍</button>
+      <div class="search-bar" id="searchBar">
+        <input type="text" id="siteSearch" placeholder="Search products, pets…"
+          oninput="handleSearch(this.value)" onkeydown="if(event.key==='Enter')doSearch()">
+        <div class="search-results" id="searchResults"></div>
+      </div>
+    </div>
+    <a href="wishlist.html" class="nav-icon-btn" title="Wishlist">
+      ♡ <span id="wishlistCount" class="nav-dot"></span>
+    </a>
+    <button class="cart-trigger" onclick="openCart()">
+      Bag
+      <span class="cart-trigger-count" id="cartCount">0</span>
+    </button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-left">
+    <div class="hero-overline">For every kind of critter</div>
+    <h1>Life's better<br>with a <em>happy</em><br>pet.</h1>
+    <p class="hero-sub">Crittrly handpicks premium, design-forward pet products your animals will actually love — tested, thoughtfully chosen, and shipped fast.</p>
+    <div class="hero-ctas">
+      <a href="shop.html" class="btn-primary">Shop Now →</a>
+      <a href="shop.html?collection=new" class="btn-outline">New Arrivals</a>
+    </div>
+    <div class="hero-proof">
+      <div class="proof-avatars">
+        <div class="proof-avatar">🧑</div>
+        <div class="proof-avatar">👩</div>
+        <div class="proof-avatar">🧔</div>
+        <div class="proof-avatar">👱</div>
+      </div>
+      <div class="proof-text">
+        <div class="proof-stars">★★★★★</div>
+        <div>Loved by <strong>12,000+</strong> pet parents</div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="hero-right-inner">
+      <div class="hero-emoji-grid">
+        <a href="shop.html?cat=dog" class="hero-cell hero-cell-0">
+          <span class="hero-cell-emoji">🐕</span>
+          <span class="hero-cell-label">Dogs</span>
+          <span class="hero-cell-count">284 products</span>
+        </a>
+        <a href="shop.html?cat=cat" class="hero-cell hero-cell-1">
+          <span class="hero-cell-emoji">🐈</span>
+          <span class="hero-cell-label">Cats</span>
+          <span class="hero-cell-count">196 products</span>
+        </a>
+        <a href="shop.html?cat=bird" class="hero-cell hero-cell-2">
+          <span class="hero-cell-emoji">🦜</span>
+          <span class="hero-cell-label">Birds</span>
+          <span class="hero-cell-count">88 products</span>
+        </a>
+        <a href="shop.html?cat=reptile" class="hero-cell hero-cell-3">
+          <span class="hero-cell-emoji">🦎</span>
+          <span class="hero-cell-label">Reptiles</span>
+          <span class="hero-cell-count">64 products</span>
+        </a>
+      </div>
+      <div class="hero-float">
+        <span class="hero-float-icon">✈️</span>
+        <div><strong>Tracked Global Delivery</strong><span>Ships to 200+ countries</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker">
+  <div class="ticker-inner"><div class="ticker-track">
+    <span>Free Shipping on $35+</span><span class="ticker-dot">✦</span>
+    <span>500+ Curated Products</span><span class="ticker-dot">✦</span>
+    <span>Tracked Delivery Worldwide</span><span class="ticker-dot">✦</span>
+    <span>30-Day Returns</span><span class="ticker-dot">✦</span>
+    <span>New Arrivals Every Week</span><span class="ticker-dot">✦</span>
+    <span>4.9★ Average Rating</span><span class="ticker-dot">✦</span>
+    <span>12,000+ Happy Pet Parents</span><span class="ticker-dot">✦</span>
+    <span>Free Shipping on $35+</span><span class="ticker-dot">✦</span>
+    <span>500+ Curated Products</span><span class="ticker-dot">✦</span>
+    <span>Tracked Delivery Worldwide</span><span class="ticker-dot">✦</span>
+    <span>30-Day Returns</span><span class="ticker-dot">✦</span>
+    <span>New Arrivals Every Week</span><span class="ticker-dot">✦</span>
+    <span>4.9★ Average Rating</span><span class="ticker-dot">✦</span>
+    <span>12,000+ Happy Pet Parents</span><span class="ticker-dot">✦</span>
+  </div></div>
+</div>
+
+<!-- CATEGORIES -->
+<section class="categories-section">
+  <div class="container">
+    <div class="section-header">
+      <div>
+        <div class="section-eyebrow">Browse by pet</div>
+        <h2 class="serif">Every Critter, <em>Covered.</em></h2>
+      </div>
+      <a href="shop.html" class="btn-ghost">View all products →</a>
+    </div>
+    <div class="cat-scroll">
+      <a href="shop.html?cat=dog" class="cat-card cat-card-dog">
+        <div class="cat-card-bg"></div>
+        <span class="cat-emoji">🐕</span>
+        <span class="cat-name">Dogs</span>
+        <span class="cat-count">284 products</span>
+      </a>
+      <a href="shop.html?cat=cat" class="cat-card cat-card-cat">
+        <div class="cat-card-bg"></div>
+        <span class="cat-emoji">🐈</span>
+        <span class="cat-name">Cats</span>
+        <span class="cat-count">196 products</span>
+      </a>
+      <a href="shop.html?cat=bird" class="cat-card cat-card-bird">
+        <div class="cat-card-bg"></div>
+        <span class="cat-emoji">🦜</span>
+        <span class="cat-name">Birds</span>
+        <span class="cat-count">88 products</span>
+      </a>
+      <a href="shop.html?cat=reptile" class="cat-card cat-card-reptile">
+        <div class="cat-card-bg"></div>
+        <span class="cat-emoji">🦎</span>
+        <span class="cat-name">Reptiles</span>
+        <span class="cat-count">64 products</span>
+      </a>
+      <a href="shop.html?cat=fish" class="cat-card cat-card-fish">
+        <div class="cat-card-bg"></div>
+        <span class="cat-emoji">🐠</span>
+        <span class="cat-name">Fish</span>
+        <span class="cat-count">112 products</span>
+      </a>
+      <a href="shop.html?cat=small" class="cat-card cat-card-small">
+        <div class="cat-card-bg"></div>
+        <span class="cat-emoji">🐹</span>
+        <span class="cat-name">Small Pets</span>
+        <span class="cat-count">74 products</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURED PRODUCTS -->
+<section class="products-section">
+  <div class="container">
+    <div class="section-header">
+      <div>
+        <div class="section-eyebrow">Hand-selected</div>
+        <h2 class="serif">Featured <em>Products</em></h2>
+      </div>
+      <div class="filter-row">
+        <button class="filter-pill active" onclick="filterHome(this,'all')">All</button>
+        <button class="filter-pill" onclick="filterHome(this,'dog')">Dogs</button>
+        <button class="filter-pill" onclick="filterHome(this,'cat')">Cats</button>
+        <button class="filter-pill" onclick="filterHome(this,'bird')">Birds</button>
+        <button class="filter-pill" onclick="filterHome(this,'reptile')">Reptiles</button>
+        <button class="filter-pill" onclick="filterHome(this,'fish')">Fish</button>
+      </div>
+    </div>
+    <div class="products-grid" id="homeGrid"></div>
+    <div class="load-more-wrap">
+      <a href="shop.html" class="btn-primary" style="font-size:.92rem;padding:15px 36px">Browse All 500+ Products →</a>
+    </div>
+  </div>
+</section>
+
+<!-- PROMO EDITORIAL -->
+<section class="promo-editorial">
+  <div class="promo-editorial-left">
+    <div class="promo-overline">This week's deal</div>
+    <h2>Never miss a <em>mealtime</em> again.</h2>
+    <div class="promo-tag">🔥 30% off this week only</div>
+    <p>Smart, programmable feeders for dogs and cats. Schedule up to 6 meals per day with precise portion control — your pet stays fed, even when you're out.</p>
+    <button class="btn-primary" onclick="addToCartById('dog004')" style="width:fit-content">Add to Bag — from $28.99 →</button>
+  </div>
+  <div class="promo-editorial-right">
+    <span class="promo-float-emoji">🍽️</span>
+    <div class="promo-big-price"><span class="p-num">30%</span><span class="p-off">off</span></div>
+  </div>
+</section>
+
+<!-- WHY CRITTRLY -->
+<section class="why-section">
+  <div class="container">
+    <div class="why-grid">
+      <div class="why-content">
+        <div class="section-eyebrow">Why us</div>
+        <h2 class="serif">Built for pet parents, <em>by</em> pet parents.</h2>
+        <p class="section-sub">We only stock what we'd give our own animals. No cheap fillers — just genuinely great products at honest prices.</p>
+        <div class="why-items">
+          <div class="why-item">
+            <div class="why-icon">🔍</div>
+            <div>
+              <h3>Handpicked & Tested</h3>
+              <p>Every product is reviewed for quality before we list it. If it doesn't meet the bar, it doesn't make the store.</p>
+            </div>
+          </div>
+          <div class="why-item">
+            <div class="why-icon">🚚</div>
+            <div>
+              <h3>Fast, Tracked Delivery</h3>
+              <p>We ship worldwide with full tracking on every order. Most customers receive within 7–14 business days.</p>
+            </div>
+          </div>
+          <div class="why-item">
+            <div class="why-icon">💬</div>
+            <div>
+              <h3>Real Human Support</h3>
+              <p>A real person replies within 24 hours — we genuinely care about getting every order right.</p>
+            </div>
+          </div>
+          <div class="why-item">
+            <div class="why-icon">🔄</div>
+            <div>
+              <h3>30-Day Returns</h3>
+              <p>Not happy? Full refund or swap, no questions. We'd rather you be satisfied than keep a sale.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="why-visual">
+        <div class="why-visual-inner">
+          <span style="font-size:9rem">🐾</span>
+          <div class="why-testimonial">
+            <div class="why-testimonial-stars">★★★★★</div>
+            <p>"I've ordered four times. Products are always exactly as described, delivery is fast, and their support replied on a Sunday."</p>
+            <div class="why-testimonial-author">— Marcus T., German Shepherd Dad</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="testimonials-section">
+  <div class="container">
+    <div class="test-header">
+      <div>
+        <div class="section-eyebrow">Real reviews</div>
+        <h2 class="serif">12,000+ Happy <em>Pet Parents.</em></h2>
+      </div>
+      <div class="rating-summary">
+        <div class="rating-big">4.9</div>
+        <div class="rating-details">
+          <div class="rating-stars">★★★★★</div>
+          <div class="rating-label">from 3,842 reviews</div>
+        </div>
+      </div>
+    </div>
+    <div class="test-grid">
+      <div class="test-card">
+        <div class="test-stars">★★★★★</div>
+        <p>"My Labrador goes absolutely crazy for the puzzle toy. Best $22 I've ever spent. Keeps him mentally stimulated for hours."</p>
+        <div class="test-author">
+          <div class="test-av" style="background:#5a7a5f">JM</div>
+          <div><div class="test-name">Jessica M.</div><div class="test-pet">🐕 Lab Mom, Ohio</div></div>
+          <div class="test-verified">✓ Verified</div>
+        </div>
+      </div>
+      <div class="test-card">
+        <div class="test-stars">★★★★★</div>
+        <p>"Got the cat window hammock and now both my cats fight over it constantly. Arrived well-packaged, genuinely impressive quality."</p>
+        <div class="test-author">
+          <div class="test-av" style="background:#c4603a">RP</div>
+          <div><div class="test-name">Rachel P.</div><div class="test-pet">🐈 Cat Parent, London</div></div>
+          <div class="test-verified">✓ Verified</div>
+        </div>
+      </div>
+      <div class="test-card">
+        <div class="test-stars">★★★★★</div>
+        <p>"The auto feeder changed our lives. No more 5am wake-up calls from Biscuit. Programs easily and the portion control is perfect."</p>
+        <div class="test-author">
+          <div class="test-av" style="background:#2e2e2b">DK</div>
+          <div><div class="test-name">Dan K.</div><div class="test-pet">🐕 Dachshund Dad, Toronto</div></div>
+          <div class="test-verified">✓ Verified</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NEWSLETTER -->
+<section class="newsletter-section">
+  <div class="container newsletter-inner">
+    <div>
+      <h2 class="serif" style="color:var(--white)">Get 15% off your <em>first</em> order.</h2>
+      <p>Join 12,000+ pet parents. New arrivals, exclusive deals, and actual pet care tips — straight to your inbox.</p>
+    </div>
+    <div class="newsletter-form">
+      <div class="newsletter-row">
+        <input type="email" id="nlEmail" placeholder="your@email.com">
+        <button onclick="subscribeNewsletter()">Get My 15% Off</button>
+      </div>
+      <span class="newsletter-note">🔒 No spam. One-click unsubscribe.</span>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container footer-top">
+    <div class="footer-brand">
+      <div class="footer-brand-logo">Crittr<em>ly</em></div>
+      <p>Premium, design-forward pet products for every critter on the planet — shipped fast, backed by real support.</p>
+      <div class="footer-social">
+        <button class="social-btn">𝕏</button>
+        <button class="social-btn">f</button>
+        <button class="social-btn">▶</button>
+        <button class="social-btn">📷</button>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4>Shop</h4>
+      <ul>
+        <li><a href="shop.html?cat=dog">Dog Products</a></li>
+        <li><a href="shop.html?cat=cat">Cat Products</a></li>
+        <li><a href="shop.html?cat=bird">Bird Products</a></li>
+        <li><a href="shop.html?cat=reptile">Reptile Products</a></li>
+        <li><a href="shop.html?cat=fish">Fish Products</a></li>
+        <li><a href="shop.html?collection=new">New Arrivals</a></li>
+        <li><a href="shop.html?collection=sale">Sale</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Support</h4>
+      <ul>
+        <li><a href="tracking.html">Track My Order</a></li>
+        <li><a href="returns.html">Returns</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="contact.html">Contact Us</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Company</h4>
+      <ul>
+        <li><a href="about.html">About Crittrly</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+        <li><a href="terms.html">Terms of Service</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container footer-bottom-inner">
+      <p>© 2025 Crittrly.com · All rights reserved</p>
+      <div class="pay-icons">
+        <span class="pay-icon">VISA</span>
+        <span class="pay-icon">MC</span>
+        <span class="pay-icon">AMEX</span>
+        <span class="pay-icon">PayPal</span>
+        <span class="pay-icon">Apple Pay</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- CART DRAWER -->
+<div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+<div class="cart-drawer" id="cartDrawer">
+  <div class="cart-head">
+    <h3>Your Bag</h3>
+    <button class="cart-close" onclick="closeCart()">✕</button>
+  </div>
+  <div class="cart-body" id="cartBody"></div>
+  <div class="cart-foot" id="cartFoot"></div>
+</div>
+
+<!-- QUICK VIEW -->
+<div class="modal-overlay" id="qvOverlay" onclick="closeQuickView()"></div>
+<div class="qv-modal" id="qvModal"></div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><span class="toast-dot" id="toastDot"></span><span id="toastMsg"></span></div>
+
+<script src="js/data.js"></script>
+<script src="js/cart.js"></script>
+<script src="js/main.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>
