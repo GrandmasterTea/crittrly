@@ -191,15 +191,67 @@ const cGet = k => { const e = _cache.get(k); if (!e || Date.now() > e.e) { _cach
 const cSet = (k, d, t) => _cache.set(k, { d, e: Date.now() + (t || CACHE_TTL) });
 
 // ── CJ PRODUCT HELPERS ────────────────────────────────────────────────────────
+
+// Specific CJ search terms per category — tight enough to avoid non-pet results
 const PET_Q = {
-  dog:     ['dog pet toy', 'dog bed', 'dog leash collar', 'dog automatic feeder'],
-  cat:     ['cat toy interactive', 'cat litter box', 'cat tree', 'cat window perch'],
-  bird:    ['bird cage stand', 'parrot toy', 'bird perch wood'],
-  reptile: ['reptile terrarium', 'reptile heat lamp', 'lizard gecko hide'],
-  fish:    ['aquarium fish tank', 'fish led light', 'fish filter'],
-  small:   ['hamster wheel silent', 'rabbit cage', 'guinea pig toy'],
-  all:     ['pet supply accessories', 'pet toy interactive', 'pet care product'],
+  dog: [
+    'dog chew toy', 'dog rope toy', 'dog harness', 'dog leash',
+    'dog food bowl', 'dog water fountain', 'dog bed mat', 'dog crate',
+    'dog training collar', 'puppy toy squeaky', 'dog grooming brush',
+    'dog automatic feeder', 'dog puzzle toy', 'dog carrier bag',
+  ],
+  cat: [
+    'cat teaser wand toy', 'cat scratcher post', 'cat tree tower',
+    'cat litter box', 'cat automatic feeder', 'cat water fountain',
+    'cat window hammock', 'cat tunnel toy', 'cat ball toy',
+    'kitten toy interactive', 'cat grooming brush', 'cat carrier bag',
+  ],
+  bird: [
+    'parrot bird toy', 'bird cage perch', 'bird swing toy',
+    'parrot foraging toy', 'bird feeder dish', 'bird mirror toy',
+    'cockatiel toy', 'bird cage accessory', 'parakeet toy',
+  ],
+  reptile: [
+    'reptile terrarium decoration', 'reptile heat lamp', 'gecko hide cave',
+    'reptile water dish', 'lizard basking platform', 'reptile thermometer',
+    'snake hide box', 'reptile fogger mister', 'tortoise food dish',
+  ],
+  fish: [
+    'aquarium fish decoration', 'fish tank ornament', 'aquarium led light',
+    'fish tank filter', 'aquarium air pump', 'fish tank heater',
+    'aquarium plant artificial', 'betta fish tank', 'aquarium gravel',
+  ],
+  small: [
+    'hamster exercise wheel', 'hamster hideout house', 'rabbit hay feeder',
+    'guinea pig hideout', 'hamster water bottle', 'small animal tunnel',
+    'rabbit chew toy', 'hamster bedding nest', 'guinea pig toy',
+  ],
+  all: [
+    'dog chew toy', 'cat scratcher post', 'parrot bird toy',
+    'hamster exercise wheel', 'aquarium fish decoration', 'reptile hide cave',
+    'dog harness leash', 'cat water fountain', 'dog food bowl stainless',
+    'cat tree tower', 'dog puzzle toy', 'rabbit chew toy',
+  ],
 };
+
+// Keywords that must appear in product name/category for it to be considered pet-related
+const PET_KEYWORDS = [
+  'dog','cat','pet','puppy','kitten','bird','parrot','fish','aquarium',
+  'reptile','lizard','gecko','hamster','rabbit','guinea','tortoise',
+  'ferret','hedgehog','gerbil','chinchilla','cockatiel','parakeet',
+  'canary','turtle','snake','frog','leash','harness','litter','kibble',
+  'paw','tail','fur','feather','crate','kennel','hutch','vivarium',
+  'terrarium','perch','scratching','grooming','chew','squeaky','catnip',
+];
+
+function isPetProduct(p) {
+  const text = [
+    p.productNameEn || p.productName || '',
+    p.categoryName || '',
+    p.remark || '',
+  ].join(' ').toLowerCase();
+  return PET_KEYWORDS.some(kw => text.includes(kw));
+}
 
 function shapeProduct(p, cat) {
   return {
@@ -228,10 +280,17 @@ function guessCategory(p) {
 }
 
 async function cjSearch(query, page, limit) {
-  const k = `s:${query}:${page}:${limit}`;
-  const c = cGet(k); if (c) return c;
+  // Request more than needed so filtering doesn't leave us short
+  const fetchSize = Math.min((limit || 20) * 3, 60);
+  const k = `s:${query}:${page}:${fetchSize}`;
+  const cached = cGet(k); if (cached) return cached;
   const tok = await cjToken();
-  const qs = new URLSearchParams({ pageNum: page || 1, pageSize: limit || 20, productNameEn: query, productType: 'ORDINARY_PRODUCT' }).toString();
+  const qs = new URLSearchParams({
+    pageNum: page || 1,
+    pageSize: fetchSize,
+    productNameEn: query,
+    productType: 'ORDINARY_PRODUCT',
+  }).toString();
   const res = await cjReq('GET', `/api2.0/v1/product/list?${qs}`, null, tok);
   cSet(k, res);
   return res;
@@ -297,16 +356,64 @@ const server = http.createServer(async (req, res) => {
 
   // ── /api/pet-products?pet=dog&page=1&limit=12 ────────────────────────────
   if (pn === '/api/pet-products' && m === 'GET') {
-    const pet   = q.pet || 'all';
-    const page  = parseInt(q.page) || 1;
-    const limit = parseInt(q.limit) || 12;
-    const qs    = PET_Q[pet] || PET_Q.all;
-    const query = qs[(page - 1) % qs.length];
+    const pet     = q.pet || 'all';
+    const page    = parseInt(q.page) || 1;
+    const limit   = parseInt(q.limit) || 12;
+    const queries = PET_Q[pet] || PET_Q.all;
+
     try {
-      const data = await cjSearch(query, page, limit);
-      const products = (data.data?.list || []).map(p => shapeProduct(p, pet === 'all' ? null : pet));
-      return jsn(res, { result: true, products, total: data.data?.total || products.length });
-    } catch (e) { return err(res, e.message); }
+      // Run 3 search terms in parallel to get variety and enough to filter from
+      const startIdx = ((page - 1) * 3) % queries.length;
+      const terms = [
+        queries[startIdx % queries.length],
+        queries[(startIdx + 1) % queries.length],
+        queries[(startIdx + 2) % queries.length],
+      ];
+
+      const allResults = await Promise.all(
+        terms.map(term => cjSearch(term, 1, limit * 2).catch(() => null))
+      );
+
+      const seen = new Set();
+      let products = [];
+
+      // First pass: strict pet filter + must have image
+      for (const data of allResults) {
+        if (!data || !data.data) continue;
+        for (const p of (data.data.list || [])) {
+          if (seen.has(p.pid)) continue;
+          seen.add(p.pid);
+          if (!isPetProduct(p)) continue;
+          const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
+          if (!img) continue;
+          products.push(shapeProduct(p, pet === 'all' ? null : pet));
+          if (products.length >= limit) break;
+        }
+        if (products.length >= limit) break;
+      }
+
+      // Second pass: if we're still short, relax the pet filter but keep image requirement
+      if (products.length < limit) {
+        for (const data of allResults) {
+          if (!data || !data.data) continue;
+          for (const p of (data.data.list || [])) {
+            if (seen.has(p.pid)) continue;
+            seen.add(p.pid);
+            const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
+            if (!img) continue;
+            products.push(shapeProduct(p, pet === 'all' ? null : pet));
+            if (products.length >= limit) break;
+          }
+          if (products.length >= limit) break;
+        }
+      }
+
+      console.log('[CJ] pet=' + pet + ' terms=[' + terms.join(',') + '] → ' + products.length + ' products');
+      return jsn(res, { result: true, products, total: products.length });
+    } catch (e) {
+      console.error('[CJ] pet-products error:', e.message);
+      return err(res, e.message);
+    }
   }
 
   // ── /api/products/search?q= ──────────────────────────────────────────────
