@@ -267,7 +267,7 @@ async function cjSearch(query, page, limit) {
   if (cached) return cached;
   const tok = await cjToken();
   const qs = new URLSearchParams({
-    pageNum: page || 1, pageSize: Math.min(limit || 20, 50),
+    pageNum: page || 1, pageSize: Math.min(limit || 20, 50), // CJ API max is 50 per page
     productNameEn: query, productType: 'ORDINARY_PRODUCT',
   }).toString();
   console.log('[CJ] Search:', query, 'pg:', page);
