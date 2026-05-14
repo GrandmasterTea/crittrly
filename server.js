@@ -388,51 +388,67 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return err(res, e.message); }
   }
 
-  // ── GET /api/cj/search — browse CJ, paginate all pages up to limit ──────────
+  // ── GET /api/cj/search — browse CJ using keyword variations ─────────────────
+  // CJ pagination returns duplicate results, so we fire multiple keyword
+  // variations in parallel to get genuinely different products
   if (pn === '/api/cj/search' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
-    const query      = q.q || '';
-    const maxResults = Math.min(parseInt(q.limit) || 500, 500);
+    const query = q.q || '';
+    const cat   = q.cat || '';
     if (!query) return jsn(res, { result: true, products: [], total: 0 });
     try {
-      const PAGE_SIZE = 50;
-      const allProducts = [];
-      const seen = new Set();
       const tok = await cjToken();
+      const words = query.trim().toLowerCase().split(/\s+/);
 
-      // Direct CJ call bypassing cache for full pagination control
-      async function fetchPage(pageNum) {
+      // Build varied search terms — CJ returns different results for different phrasings
+      const termSet = new Set();
+      termSet.add(query);
+      // Word order variations
+      if (words.length > 1) {
+        termSet.add(words.slice().reverse().join(' '));
+        words.forEach(w => { if (w.length > 2) termSet.add(w); });
+      }
+      // Common suffixes that unlock different CJ catalog sections
+      const suffixes = ['', ' for pets', ' pet', ' dog', ' cat', ' small animal'];
+      const hasPetWord = ['dog','cat','pet','bird','fish','hamster','rabbit','reptile'].some(w => query.includes(w));
+      if (!hasPetWord) {
+        suffixes.forEach(s => termSet.add(query + s));
+      }
+      // Use first 8 unique terms
+      const terms = [...termSet].filter(Boolean).slice(0, 8);
+
+      async function fetchTerm(term, page) {
         const qs = new URLSearchParams({
-          pageNum, pageSize: PAGE_SIZE,
-          productNameEn: query, productType: 'ORDINARY_PRODUCT',
+          pageNum: page, pageSize: 50,
+          productNameEn: term, productType: 'ORDINARY_PRODUCT',
         }).toString();
         return cjReq('GET', '/api2.0/v1/product/list?' + qs, null, tok);
       }
 
-      // Page 1 — get total
-      const first = await fetchPage(1);
-      const total = (first.data && first.data.total) || 0;
-      for (const p of (first.data && first.data.list) || []) {
-        if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
+      // Fire all terms page 1 + page 2 in parallel = up to 16 requests, 800 raw results
+      const requests = [];
+      for (const term of terms) {
+        requests.push(fetchTerm(term, 1));
+        requests.push(fetchTerm(term, 2));
       }
-      console.log('[CJ Browse] "'+query+'" page 1/'+Math.ceil(total/PAGE_SIZE)+' total:'+total);
+      const results = await Promise.all(requests.map(p => p.catch(() => null)));
 
-      // Remaining pages in parallel batches of 5
-      const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), Math.ceil(maxResults / PAGE_SIZE));
-      for (let i = 2; i <= totalPages && allProducts.length < maxResults; i += 5) {
-        const batch = [];
-        for (let pg = i; pg < i + 5 && pg <= totalPages; pg++) batch.push(pg);
-        const results = await Promise.all(batch.map(pg => fetchPage(pg).catch(() => null)));
-        for (const data of results) {
-          for (const p of (data && data.data && data.data.list) || []) {
-            if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
-          }
+      const seen = new Set();
+      const allProducts = [];
+      let total = 0;
+
+      for (const data of results) {
+        if (!data || !data.data) continue;
+        if (data.data.total > total) total = data.data.total;
+        for (const p of (data.data.list || [])) {
+          if (seen.has(p.pid)) continue;
+          seen.add(p.pid);
+          allProducts.push(shapeCJProduct(p, cat || null));
         }
-        console.log('[CJ Browse] fetched up to page '+(i+4)+', products so far: '+allProducts.length);
       }
 
-      console.log('[CJ Browse] done: '+allProducts.length+' products returned');
-      return jsn(res, { result: true, products: allProducts.slice(0, maxResults), total });
+      console.log('[CJ Browse] "'+query+'" terms:'+terms.length+' → '+allProducts.length+' unique products');
+      return jsn(res, { result: true, products: allProducts, total, terms: terms.length });
     } catch (e) { console.error('[CJ Browse] error:', e.message); return err(res, e.message); }
   }
 
