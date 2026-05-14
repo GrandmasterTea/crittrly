@@ -1,12 +1,33 @@
 'use strict';
 /**
- * Crittrly Server
- * ─────────────────────────────────────────────
- * • Saves orders to MySQL (Verpex)
- * • CJ product image/search proxy
- * • Admin API for order management
- * • Serves static crittrly/ files
- * • NO auto-fulfillment — orders are fulfilled manually via CJ dashboard
+ * Crittrly Server v4
+ * ─────────────────────────────────────────────────────────
+ * Architecture: Catalog-based dropshipping
+ *
+ * HOW IT WORKS:
+ *   1. Admin browses CJ → adds specific products to MySQL catalog
+ *   2. Shop/homepage serve from catalog (every product has a CJ PID)
+ *   3. Customer orders → order items include exact CJ PID
+ *   4. Fulfillment sheet shows direct CJ link per item → one click to fulfill
+ *
+ * ROUTES:
+ *   Public:
+ *     GET  /api/status
+ *     GET  /api/catalog?cat=dog&page=1&limit=24&search=
+ *     GET  /api/catalog/:id
+ *     GET  /api/cj/search?q=&cat=&page=&limit=   (admin browse CJ)
+ *     POST /api/orders
+ *     GET  /api/orders/:id
+ *
+ *   Admin (X-Admin-Key required):
+ *     GET  /api/admin/stats
+ *     GET  /api/admin/orders?page=&limit=&status=&search=
+ *     PUT  /api/admin/orders/:id
+ *     POST /api/admin/catalog         (add product to catalog)
+ *     PUT  /api/admin/catalog/:id     (update product)
+ *     DELETE /api/admin/catalog/:id   (remove from catalog)
+ *     GET  /api/admin/settings
+ *     POST /api/admin/settings
  */
 
 const http  = require('http');
@@ -17,33 +38,24 @@ const url   = require('url');
 const mysql = require('mysql2/promise');
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const PORT       = process.env.PORT        || 3000;
-const CJ_EMAIL   = process.env.CJ_EMAIL    || 'CJ5405524';
-const CJ_PASS    = process.env.CJ_PASSWORD || '1184c51994b8447889809d80e70464a6';
-const STATIC_DIR = process.env.STATIC_DIR  || path.join(__dirname, '..', 'crittrly');
-// DB config — three modes:
-// 1. BRIDGE_URL set → use PHP bridge on Verpex (no port 3306 needed)
-// 2. MYSQL_* set    → use Railway MySQL plugin
-// 3. DB_* set       → use direct MySQL connection
-const DB_HOST     = process.env.MYSQL_HOST     || process.env.DB_HOST || 'localhost';
-const DB_USER     = process.env.MYSQL_USER     || process.env.DB_USER || 'crittrly_admin';
-const DB_PASS     = process.env.MYSQL_PASSWORD || process.env.DB_PASS || '@MazdaDriver';
-const DB_NAME     = process.env.MYSQL_DATABASE || process.env.DB_NAME || 'crittrly_1';
-const DB_PORT     = parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306');
-const BRIDGE_URL  = process.env.BRIDGE_URL  || ''; // e.g. https://crittrly.com/db-bridge.php
-const BRIDGE_KEY  = process.env.BRIDGE_KEY  || 'change-this-to-something-secret-crittrly-2025';
-const ADMIN_KEY  = process.env.ADMIN_KEY   || 'crittrly-admin-2025';
+const PORT       = process.env.PORT         || 3000;
+const CJ_EMAIL   = process.env.CJ_EMAIL     || 'CJ5405524';
+const CJ_PASS    = process.env.CJ_PASSWORD  || '1184c51994b8447889809d80e70464a6';
+const STATIC_DIR = process.env.STATIC_DIR   || path.join(__dirname, '..', 'crittrly');
+const DB_HOST    = process.env.MYSQL_HOST   || process.env.DB_HOST || 'localhost';
+const DB_USER    = process.env.MYSQL_USER   || process.env.DB_USER || 'crittrly_admin';
+const DB_PASS    = process.env.MYSQL_PASSWORD || process.env.DB_PASS || '@MazdaDriver';
+const DB_NAME    = process.env.MYSQL_DATABASE || process.env.DB_NAME || 'crittrly_1';
+const DB_PORT    = parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306');
+const BRIDGE_URL = process.env.BRIDGE_URL   || '';
+const BRIDGE_KEY = process.env.BRIDGE_KEY   || 'change-this-to-something-secret-crittrly-2025';
+const ADMIN_KEY  = process.env.ADMIN_KEY    || 'crittrly-admin-2025';
 const MARKUP     = parseFloat(process.env.PRICE_MARKUP || '3.0');
-const CJ_API     = 'developers.cjdropshipping.com';
-const CACHE_TTL  = 15 * 60 * 1000; // 15 min (reduced from 25 to refresh search results faster)
+const CJ_HOST    = 'developers.cjdropshipping.com';
+const CACHE_TTL  = 20 * 60 * 1000;
 
 // ── DATABASE ──────────────────────────────────────────────────────────────────
-// Supports two modes:
-//   BRIDGE mode: BRIDGE_URL set → calls PHP script on Verpex over HTTPS
-//   DIRECT mode: connects to MySQL directly (Railway MySQL plugin or any host)
-
 let _db;
-
 async function getDb() {
   if (_db) return _db;
   _db = await mysql.createPool({
@@ -51,15 +63,13 @@ async function getDb() {
     user: DB_USER, password: DB_PASS, database: DB_NAME,
     waitForConnections: true, connectionLimit: 10, charset: 'utf8mb4',
   });
-  console.log('[DB] Direct pool created →', DB_NAME, '@', DB_HOST);
+  console.log('[DB] Pool created →', DB_NAME, '@', DB_HOST);
   return _db;
 }
 
 async function dbQuery(sql, params) {
   params = params || [];
-
   if (BRIDGE_URL) {
-    // ── BRIDGE MODE: call PHP script on Verpex ──────────────────────────────
     const res = await fetch(BRIDGE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Bridge-Key': BRIDGE_KEY },
@@ -68,17 +78,15 @@ async function dbQuery(sql, params) {
     if (!res.ok) throw new Error('Bridge HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    // Return in mysql2-compatible format: [rows]
     if (Array.isArray(data.rows)) return [data.rows];
     return [{ affectedRows: data.affected || 0, insertId: data.insertId || 0 }];
   }
-
-  // ── DIRECT MODE: use mysql2 pool ────────────────────────────────────────────
   const pool = await getDb();
   return pool.execute(sql, params);
 }
 
 async function initTables() {
+  // Orders table
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS orders (
       id            VARCHAR(40)   PRIMARY KEY,
@@ -98,14 +106,43 @@ async function initTables() {
       discount      DECIMAL(10,2) DEFAULT 0,
       total         DECIMAL(10,2) NOT NULL DEFAULT 0,
       status        VARCHAR(30)   NOT NULL DEFAULT 'pending',
+      cj_order_id   VARCHAR(100)  DEFAULT NULL,
       tracking      VARCHAR(200)  DEFAULT NULL,
       tracking_url  VARCHAR(500)  DEFAULT NULL,
-      notes         TEXT          DEFAULT NULL,
+      fulfillment_error TEXT      DEFAULT NULL,
       created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  // Product catalog — admin adds products here with exact CJ PIDs
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS catalog (
+      id          VARCHAR(40)   PRIMARY KEY,
+      cj_pid      VARCHAR(100)  NOT NULL,
+      cj_vid      VARCHAR(100)  DEFAULT NULL,
+      name        VARCHAR(500)  NOT NULL,
+      description TEXT          DEFAULT NULL,
+      image       TEXT          DEFAULT NULL,
+      images      JSON          DEFAULT NULL,
+      category    VARCHAR(50)   NOT NULL DEFAULT 'dog',
+      price       DECIMAL(10,2) NOT NULL DEFAULT 0,
+      orig_price  DECIMAL(10,2) DEFAULT NULL,
+      wholesale   DECIMAL(10,2) DEFAULT NULL,
+      badge       VARCHAR(20)   DEFAULT NULL,
+      featured    TINYINT(1)    NOT NULL DEFAULT 0,
+      active      TINYINT(1)    NOT NULL DEFAULT 1,
+      weight_g    INT           NOT NULL DEFAULT 100,  -- product weight in grams
+      sort_order  INT           NOT NULL DEFAULT 0,
+      created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_category (category),
+      INDEX idx_featured (featured),
+      INDEX idx_active (active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  // Settings
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS settings (
       k   VARCHAR(100) PRIMARY KEY,
@@ -116,71 +153,51 @@ async function initTables() {
 
   await dbQuery(`
     INSERT IGNORE INTO settings (k,v) VALUES
-    ('store_name',      'Crittrly'),
-    ('store_email',     'hello@crittrly.com'),
-    ('free_ship',       '35'),
-    ('cj_api_key',      '${CJ_PASS}'),
-    ('cj_logistics',    'CJPacket')
+    ('store_name',   'Crittrly'),
+    ('store_email',  'hello@crittrly.com'),
+    ('free_ship',    '35'),
+    ('cj_logistics', 'CJPacket')
   `);
 
   console.log('[DB] Tables ready');
 }
 
-// ── CJ TOKEN ──────────────────────────────────────────────────────────────────
+// ── CJ AUTH ───────────────────────────────────────────────────────────────────
 let _cjTok = null, _cjExp = 0;
 
 async function cjToken() {
   if (_cjTok && Date.now() < _cjExp) return _cjTok;
-
-  // CJ API v2.0 uses apiKey format: "CJUserNum@api@secret"
-  // Build the full key — if CJ_PASS already has @api@ use it directly,
-  // otherwise combine CJ_EMAIL + @api@ + CJ_PASS
-  const apiKey = CJ_PASS.includes('@api@')
-    ? CJ_PASS
-    : (CJ_EMAIL + '@api@' + CJ_PASS);
-
-  console.log('[CJ] Authenticating with apiKey:', apiKey.substring(0, 20) + '...');
-
+  const apiKey = CJ_PASS.includes('@api@') ? CJ_PASS : (CJ_EMAIL + '@api@' + CJ_PASS);
+  console.log('[CJ] Authenticating...');
   try {
     const res = await cjReq('POST', '/api2.0/v1/authentication/getAccessToken', { apiKey });
-    console.log('[CJ] Auth response:', JSON.stringify(res).substring(0, 300));
-
     if (res.result && res.data && res.data.accessToken) {
       _cjTok = res.data.accessToken;
       _cjExp = Date.now() + 22 * 3600 * 1000;
-      console.log('[CJ] ✅ Token obtained successfully');
+      console.log('[CJ] ✅ Token OK');
       return _cjTok;
     }
-    console.warn('[CJ] Auth failed — response was:', JSON.stringify(res).substring(0, 200));
-  } catch (e) {
-    console.error('[CJ] Auth exception:', e.message);
-  }
-
-  // Last resort: use the apiKey string itself as the bearer token
-  // (some CJ integrations work this way)
-  console.log('[CJ] Falling back to apiKey as bearer token');
-  _cjTok = apiKey;
+    console.warn('[CJ] Auth fallback:', JSON.stringify(res).slice(0, 150));
+  } catch (e) { console.error('[CJ] Auth error:', e.message); }
+  _cjTok = CJ_PASS.includes('@api@') ? CJ_PASS : (CJ_EMAIL + '@api@' + CJ_PASS);
   _cjExp = Date.now() + 3600 * 1000;
   return _cjTok;
 }
 
-// ── CJ REQUEST ────────────────────────────────────────────────────────────────
 function cjReq(method, endpoint, body, tok) {
   return new Promise((resolve, reject) => {
     const opts = {
-      hostname: CJ_API, path: endpoint, method,
+      hostname: CJ_HOST, path: endpoint, method,
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     };
     if (tok) opts.headers['CJ-Access-Token'] = tok;
     const req = https.request(opts, res => {
       let raw = '';
       res.on('data', c => raw += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(raw)); }
-        catch { reject(new Error('CJ bad JSON: ' + raw.slice(0, 120))); }
-      });
+      res.on('end', () => { try { resolve(JSON.parse(raw)); } catch { reject(new Error('Bad JSON')); } });
     });
     req.on('error', reject);
+    req.setTimeout(15000, () => req.destroy(new Error('CJ timeout')));
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
@@ -191,154 +208,65 @@ const _cache = new Map();
 const cGet = k => { const e = _cache.get(k); if (!e || Date.now() > e.e) { _cache.delete(k); return null; } return e.d; };
 const cSet = (k, d, t) => _cache.set(k, { d, e: Date.now() + (t || CACHE_TTL) });
 
-// ── CJ PRODUCT HELPERS ────────────────────────────────────────────────────────
-
-// Specific CJ search terms per category — tight enough to avoid non-pet results
-const PET_Q = {
-  dog: [
-    'dog toy', 'dog leash', 'dog harness', 'dog collar', 'dog bed',
-    'dog bowl', 'dog feeder', 'dog grooming', 'dog crate', 'dog treat',
-    'puppy toy', 'dog training', 'dog clothes', 'pet dog', 'dog brush',
-  ],
-  cat: [
-    'cat toy', 'cat scratcher', 'cat tree', 'cat litter', 'cat feeder',
-    'cat fountain', 'cat bed', 'cat tunnel', 'cat collar', 'cat grooming',
-    'kitten toy', 'cat carrier', 'cat hammock', 'pet cat', 'cat brush',
-  ],
-  bird: [
-    'bird toy', 'bird cage', 'parrot toy', 'bird perch', 'bird feeder',
-    'bird swing', 'budgie toy', 'cockatiel toy', 'bird stand', 'bird mirror',
-    'parrot cage', 'bird accessory', 'bird food bowl', 'bird ladder', 'pet bird',
-  ],
-  reptile: [
-    'reptile', 'terrarium', 'gecko', 'lizard', 'snake', 'tortoise',
-    'turtle tank', 'reptile lamp', 'heat lamp reptile', 'terrarium decoration',
-    'reptile hide', 'reptile water', 'lizard cage', 'bearded dragon', 'reptile mat',
-  ],
-  fish: [
-    'aquarium', 'fish tank', 'aquarium light', 'fish tank filter', 'aquarium pump',
-    'aquarium decoration', 'fish tank heater', 'aquarium plant', 'betta fish',
-    'aquarium gravel', 'fish tank ornament', 'aquarium accessory', 'fish bowl', 'fish food', 'aquarium thermometer',
-  ],
-  small: [
-    'hamster', 'rabbit cage', 'guinea pig', 'hamster wheel', 'hamster cage',
-    'small animal', 'rabbit toy', 'hamster hideout', 'guinea pig toy', 'ferret',
-    'hamster ball', 'rabbit hutch', 'gerbil cage', 'chinchilla', 'small pet',
-  ],
-  all: [
-    'dog toy', 'cat toy', 'bird cage', 'reptile', 'aquarium',
-    'hamster wheel', 'dog leash', 'cat scratcher', 'parrot toy', 'fish tank',
-    'guinea pig', 'dog harness', 'cat tree', 'bird perch', 'terrarium',
-    'rabbit cage', 'dog collar', 'cat litter', 'aquarium light', 'pet supplies',
-  ],
-};
-
-// Per-category keyword filter — products must match at least one keyword for that category
-const CAT_KEYWORDS = {
-  dog:     ['dog','puppy','canine','hound'],
-  cat:     ['cat','kitten','feline'],
-  bird:    ['bird','parrot','budgie','cockatiel','parakeet','avian','feather'],
-  reptile: ['reptile','gecko','lizard','snake','tortoise','turtle','terrarium','vivarium','iguana','chameleon','bearded','dragon'],
-  fish:    ['fish','aquarium','tank','betta','goldfish','tropical','aquatic'],
-  small:   ['hamster','rabbit','guinea','gerbil','chinchilla','ferret','rat','mouse','small animal','small pet'],
-};
-
-// Global pet keywords — anything matching these is a valid pet product
-const PET_KEYWORDS = [
-  'dog','cat','pet','puppy','kitten','bird','parrot','fish','aquarium',
-  'reptile','lizard','gecko','hamster','rabbit','guinea','tortoise','turtle',
-  'ferret','gerbil','chinchilla','cockatiel','parakeet','budgie','snake',
-  'leash','harness','litter','paw','crate','kennel','hutch','vivarium',
-  'terrarium','perch','scratching','grooming','chew','squeaky','catnip',
-  'aquatic','betta','tropical','iguana','chameleon','bearded','dragon',
-];
-
-function isPetProduct(p, cat) {
-  const text = [
-    p.productNameEn || p.productName || '',
-    p.categoryName || '',
-    p.remark || '',
-  ].join(' ').toLowerCase();
-
-  // If checking for a specific category, use that category's keywords
-  if (cat && CAT_KEYWORDS[cat]) {
-    return CAT_KEYWORDS[cat].some(kw => text.includes(kw));
-  }
-
-  // Otherwise use global pet keywords
-  return PET_KEYWORDS.some(kw => text.includes(kw));
-}
-
+// ── MARKUP ────────────────────────────────────────────────────────────────────
 function applyMarkup(raw) {
   if (!raw || raw <= 0) return 0;
-  // Multiply by MARKUP then round up to nearest .99
   return Math.ceil(raw * MARKUP) - 0.01;
 }
 
-function shapeProduct(p, cat) {
-  const wholesale  = parseFloat(p.sellPrice || p.productPrice || 0);
-  const listPrice  = parseFloat(p.productPrice || 0);
-  const retail     = applyMarkup(wholesale);
-  // Show a crossed-out "was" price if CJ has a higher list price
-  const origRetail = listPrice > wholesale ? applyMarkup(listPrice) : null;
+// ── SHAPE CJ PRODUCT (for browse results only — not for catalog) ──────────────
+function shapeCJProduct(p, cat) {
+  const wholesale = parseFloat(p.sellPrice || p.productPrice || 0);
+  const list      = parseFloat(p.productPrice || 0);
   return {
-    pid:       p.pid,
-    name:      p.productNameEn || p.productName || 'Product',
-    image:     p.productImage || p.productImgUrl || (p.productImages || [])[0] || null,
-    images:    p.productImages || [p.productImage].filter(Boolean),
-    price:     retail,
-    origPrice: origRetail,
-    wholesale: wholesale, // admin reference only, never shown to customer
-    category:  cat || guessCategory(p),
-    stock:     p.inventoryQuantity || 99,
-    rating:    4.5 + Math.round(Math.random() * 5) / 10,
-    reviews:   Math.floor(60 + Math.random() * 400),
-    cjUrl:     `https://app.cjdropshipping.com/product-detail.html?id=${p.pid}`,
+    pid:         p.pid,
+    name:        (p.productNameEn || p.productName || 'Product').substring(0, 120),
+    image:       p.productImage || p.productImgUrl || (p.productImages || [])[0] || null,
+    images:      p.productImages || [],
+    price:       applyMarkup(wholesale),
+    origPrice:   list > wholesale ? applyMarkup(list) : null,
+    wholesale,
+    category:    cat || guessCategory(p),
+    stock:       p.inventoryQuantity || 99,
+    cjUrl:       'https://app.cjdropshipping.com/product-detail.html?id=' + p.pid,
+    rating:      (4.5 + Math.round(Math.random() * 5) / 10),
+    reviews:     Math.floor(60 + Math.random() * 400),
   };
 }
 
 function guessCategory(p) {
   const s = ((p.productNameEn || '') + ' ' + (p.categoryName || '')).toLowerCase();
-  if (s.includes('dog') || s.includes('puppy'))       return 'dog';
-  if (s.includes('cat') || s.includes('kitten'))      return 'cat';
-  if (s.includes('bird') || s.includes('parrot'))     return 'bird';
-  if (s.includes('reptile') || s.includes('lizard'))  return 'reptile';
-  if (s.includes('fish') || s.includes('aquarium'))   return 'fish';
-  if (s.includes('hamster') || s.includes('rabbit'))  return 'small';
+  if (s.includes('dog') || s.includes('puppy'))                     return 'dog';
+  if (s.includes('cat') || s.includes('kitten'))                    return 'cat';
+  if (s.includes('bird') || s.includes('parrot'))                   return 'bird';
+  if (s.includes('reptile') || s.includes('lizard') || s.includes('gecko')) return 'reptile';
+  if (s.includes('fish') || s.includes('aquarium'))                 return 'fish';
+  if (s.includes('hamster') || s.includes('rabbit') || s.includes('guinea')) return 'small';
   return 'dog';
 }
 
+// ── CJ SEARCH (for admin browse) ─────────────────────────────────────────────
 async function cjSearch(query, page, limit) {
-  // Request more than needed so filtering doesn't leave us short
-  const fetchSize = Math.min((limit || 20) * 3, 60);
-  const k = `s:${query}:${page}:${fetchSize}`;
-  const cached = cGet(k); if (cached) return cached;
+  const k = `cj:${query}:${page}:${limit}`;
+  const cached = cGet(k);
+  if (cached) return cached;
   const tok = await cjToken();
   const qs = new URLSearchParams({
-    pageNum: page || 1,
-    pageSize: fetchSize,
-    productNameEn: query,
-    productType: 'ORDINARY_PRODUCT',
+    pageNum: page || 1, pageSize: Math.min(limit || 20, 50),
+    productNameEn: query, productType: 'ORDINARY_PRODUCT',
   }).toString();
-  const res = await cjReq('GET', `/api2.0/v1/product/list?${qs}`, null, tok);
+  console.log('[CJ] Search:', query, 'pg:', page);
+  const res = await cjReq('GET', '/api2.0/v1/product/list?' + qs, null, tok);
   cSet(k, res);
-  return res;
-}
-
-async function cjDetail(pid) {
-  const k = 'p:' + pid; const c = cGet(k); if (c) return c;
-  const tok = await cjToken();
-  const res = await cjReq('GET', `/api2.0/v1/product/query?pid=${pid}`, null, tok);
-  cSet(k, res, 60 * 60 * 1000);
   return res;
 }
 
 // ── HTTP HELPERS ──────────────────────────────────────────────────────────────
 const MIME = {
-  '.html': 'text/html;charset=utf-8', '.css': 'text/css', '.js': 'application/javascript',
-  '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon', '.webp': 'image/webp',
+  '.html': 'text/html;charset=utf-8', '.css': 'text/css',
+  '.js': 'application/javascript', '.json': 'application/json',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webp': 'image/webp',
 };
 
 function cors(res) {
@@ -352,209 +280,159 @@ function jsn(res, data, status) {
   res.end(JSON.stringify(data));
 }
 function err(res, msg, status) { jsn(res, { result: false, message: msg }, status || 500); }
+
 function body(req) {
-  return new Promise(ok => {
-    let s = '';
-    req.on('data', c => s += c);
-    req.on('end', () => { try { ok(JSON.parse(s)); } catch { ok({}); } });
+  return new Promise(resolve => {
+    let raw = '';
+    req.on('data', c => raw += c);
+    req.on('end', () => { try { resolve(JSON.parse(raw)); } catch { resolve({}); } });
   });
 }
 
-// ── ROUTER ────────────────────────────────────────────────────────────────────
+// ── REQUEST HANDLER ───────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  const p  = url.parse(req.url, true);
-  const pn = p.pathname;
-  const q  = p.query;
-  const m  = req.method;
+  const parsed  = url.parse(req.url, true);
+  const pn      = parsed.pathname;
+  const q       = parsed.query;
+  const m       = req.method;
+  const isAdmin = req.headers['x-admin-key'] === ADMIN_KEY;
 
   if (m === 'OPTIONS') { cors(res); res.writeHead(204); return res.end(); }
 
-  const isAdmin = req.headers['x-admin-key'] === ADMIN_KEY;
-
-  // ── /api/status ──────────────────────────────────────────────────────────
+  // ── GET /api/status ───────────────────────────────────────────────────────
   if (pn === '/api/status' && m === 'GET') {
+    let catalogCount = 0;
+    try { const [[row]] = await dbQuery('SELECT COUNT(*) AS n FROM catalog WHERE active=1'); catalogCount = row.n; } catch {}
     return jsn(res, {
       result: true,
-      mode: BRIDGE_URL ? 'bridge' : 'direct',
-      db: BRIDGE_URL ? 'bridge' : !!_db,
+      db: !!BRIDGE_URL || !!_db,
       cjToken: !!_cjTok && Date.now() < _cjExp,
-      cache: _cache.size,
+      catalogProducts: catalogCount,
       uptime: Math.floor(process.uptime()),
     });
   }
 
-  // ── /api/pet-products?pet=dog&page=1&limit=12 ────────────────────────────
-  if (pn === '/api/pet-products' && m === 'GET') {
-    const pet   = q.pet || 'all';
-    const page  = parseInt(q.page) || 1;
-    const limit = parseInt(q.limit) || 12;
+  // ── GET /api/catalog — serve products from MySQL catalog ─────────────────
+  if (pn === '/api/catalog' && m === 'GET') {
+    const cat    = q.cat    || '';
+    const search = q.search || '';
+    const feat   = q.featured === '1';
+    const page   = Math.max(1, parseInt(q.page) || 1);
+    const limit  = Math.min(48, parseInt(q.limit) || 24);
+    const offset = (page - 1) * limit;
 
     try {
-      const seen = new Set();
-      let products = [];
+      let where = 'active = 1', params = [];
+      if (cat)    { where += ' AND category = ?'; params.push(cat); }
+      if (search) { where += ' AND (name LIKE ? OR description LIKE ?)'; const s = '%'+search+'%'; params.push(s,s); }
+      if (feat)   { where += ' AND featured = 1'; }
 
-      if (pet === 'all') {
-        // Pull from ALL 6 categories in parallel — 2 items per cat = 12 total
-        const CATS = ['dog','cat','bird','reptile','fish','small'];
-        const perCat = Math.ceil(limit / CATS.length);
-        const offset = ((page - 1) * 2) % 4;
+      const [rows]    = await dbQuery(`SELECT * FROM catalog WHERE ${where} ORDER BY featured DESC, sort_order ASC, created_at DESC LIMIT ${limit} OFFSET ${offset}`, params);
+      const [[count]] = await dbQuery(`SELECT COUNT(*) AS n FROM catalog WHERE ${where}`, params);
 
-        const catResults = await Promise.all(
-          CATS.map(cat => {
-            const terms = PET_Q[cat];
-            const term  = terms[(offset + CATS.indexOf(cat)) % terms.length];
-            return cjSearch(term, 1, perCat * 6).catch(() => null);
-          })
-        );
+      const products = rows.map(p => ({
+        id:        p.id,
+        pid:       p.cj_pid,
+        cj_pid:    p.cj_pid,
+        cj_vid:    p.cj_vid,
+        name:      p.name,
+        image:     p.image,
+        images:    p.images ? (typeof p.images === 'string' ? JSON.parse(p.images) : p.images) : [],
+        price:     parseFloat(p.price),
+        origPrice: p.orig_price ? parseFloat(p.orig_price) : null,
+        category:  p.category,
+        badge:     p.badge,
+        featured:  !!p.featured,
+        rating:    (4.5 + (parseInt(p.id, 36) % 5) / 10) || 4.7,
+        reviews:   (50 + (parseInt(p.id, 36) % 400)) || 120,
+        cjUrl:     'https://app.cjdropshipping.com/product-detail.html?id=' + p.cj_pid,
+        description: p.description || '',
+      }));
 
-        // Take perCat products from each category
-        for (let i = 0; i < CATS.length; i++) {
-          const data = catResults[i];
-          const cat  = CATS[i];
-          if (!data || !data.data) continue;
-          let taken = 0;
-          // First pass: strict category filter
-          for (const p of (data.data.list || [])) {
-            if (seen.has(p.pid)) continue;
-            seen.add(p.pid);
-            if (!isPetProduct(p, cat)) continue;
-            const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
-            if (!img) continue;
-            products.push(shapeProduct(p, cat));
-            taken++;
-            if (taken >= perCat) break;
-          }
-          // Second pass: if short, take anything with an image
-          if (taken < perCat) {
-            for (const p of (data.data.list || [])) {
-              if (seen.has(p.pid)) continue;
-              seen.add(p.pid);
-              const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
-              if (!img) continue;
-              products.push(shapeProduct(p, cat));
-              taken++;
-              if (taken >= perCat) break;
-            }
-          }
-        }
-
-        // Shuffle
-        for (let i = products.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [products[i], products[j]] = [products[j], products[i]];
-        }
-
-      } else {
-        // Single category — run 5 terms in parallel for better coverage
-        const queries  = PET_Q[pet] || PET_Q.all;
-        const startIdx = ((page - 1) * 5) % queries.length;
-        const terms = [];
-        for (let i = 0; i < 5; i++) {
-          terms.push(queries[(startIdx + i) % queries.length]);
-        }
-
-        const allResults = await Promise.all(
-          terms.map(term => cjSearch(term, 1, limit * 4).catch(() => null))
-        );
-
-        // First pass — category-specific keyword filter + image required
-        for (const data of allResults) {
-          if (!data || !data.data) continue;
-          for (const p of (data.data.list || [])) {
-            if (seen.has(p.pid)) continue;
-            seen.add(p.pid);
-            if (!isPetProduct(p, pet)) continue;
-            const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
-            if (!img) continue;
-            products.push(shapeProduct(p, pet));
-            if (products.length >= limit) break;
-          }
-          if (products.length >= limit) break;
-        }
-
-        // Second pass — global pet filter (catches related products)
-        if (products.length < limit) {
-          for (const data of allResults) {
-            if (!data || !data.data) continue;
-            for (const p of (data.data.list || [])) {
-              if (seen.has(p.pid)) continue;
-              seen.add(p.pid);
-              if (!isPetProduct(p, null)) continue;
-              const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
-              if (!img) continue;
-              products.push(shapeProduct(p, pet));
-              if (products.length >= limit) break;
-            }
-            if (products.length >= limit) break;
-          }
-        }
-
-        // Third pass — image only, no keyword filter (last resort for sparse categories)
-        if (products.length < Math.ceil(limit / 2)) {
-          for (const data of allResults) {
-            if (!data || !data.data) continue;
-            for (const p of (data.data.list || [])) {
-              if (seen.has(p.pid)) continue;
-              seen.add(p.pid);
-              const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
-              if (!img) continue;
-              products.push(shapeProduct(p, pet));
-              if (products.length >= limit) break;
-            }
-            if (products.length >= limit) break;
-          }
-        }
-      }
-
-      console.log('[CJ] pet=' + pet + ' page=' + page + ' → ' + products.length + ' products');
-      return jsn(res, { result: true, products, total: products.length });
-    } catch (e) {
-      console.error('[CJ] pet-products error:', e.message);
-      return err(res, e.message);
-    }
+      return jsn(res, { result: true, products, total: count.n, page, limit });
+    } catch (e) { return err(res, e.message); }
   }
 
-  // ── /api/products/search?q= ──────────────────────────────────────────────
-  if (pn === '/api/products/search' && m === 'GET') {
+  // ── GET /api/catalog/:id — single product ─────────────────────────────────
+  const catItem = pn.match(/^\/api\/catalog\/([^/]+)$/);
+  if (catItem && m === 'GET') {
+    try {
+      const [rows] = await dbQuery('SELECT * FROM catalog WHERE id = ? AND active = 1', [catItem[1]]);
+      if (!rows.length) return err(res, 'Not found', 404);
+      const p = rows[0];
+      return jsn(res, { result: true, product: {
+        id: p.id, pid: p.cj_pid, cj_pid: p.cj_pid, cj_vid: p.cj_vid,
+        name: p.name, description: p.description, image: p.image,
+        images: p.images ? JSON.parse(p.images) : [],
+        price: parseFloat(p.price), origPrice: p.orig_price ? parseFloat(p.orig_price) : null,
+        category: p.category, badge: p.badge,
+        cjUrl: 'https://app.cjdropshipping.com/product-detail.html?id=' + p.cj_pid,
+      }});
+    } catch (e) { return err(res, e.message); }
+  }
+
+  // ── GET /api/cj/search — browse CJ to find products to add ───────────────
+  // Used by admin "Browse CJ" panel only
+  if (pn === '/api/cj/search' && m === 'GET') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
     const query = q.q || '';
     const page  = parseInt(q.page) || 1;
     const limit = parseInt(q.limit) || 20;
     if (!query) return jsn(res, { result: true, products: [], total: 0 });
     try {
       const data = await cjSearch(query, page, limit);
-      const products = (data.data?.list || []).map(p => shapeProduct(p));
-      return jsn(res, { result: true, products, total: products.length });
+      const list = (data.data && data.data.list) ? data.data.list : [];
+      const products = list
+        .filter(p => p.productImage || p.productImgUrl || (p.productImages && p.productImages[0]))
+        .map(p => shapeCJProduct(p, q.cat || null));
+      return jsn(res, { result: true, products, total: (data.data && data.data.total) || products.length });
     } catch (e) { return err(res, e.message); }
   }
 
-  // ── /api/products/:pid ───────────────────────────────────────────────────
-  const prodM = pn.match(/^\/api\/products\/([^/]+)$/);
-  if (prodM && m === 'GET') {
+  // ── GET /api/cj/product/:pid — fetch a single CJ product detail ──────────
+  const cjProd = pn.match(/^\/api\/cj\/product\/([^/]+)$/);
+  if (cjProd && m === 'GET') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    const pid = cjProd[1];
+    const k = 'cjpid:' + pid;
+    let data = cGet(k);
+    if (!data) {
+      const tok = await cjToken();
+      data = await cjReq('GET', '/api2.0/v1/product/query?pid=' + pid, null, tok);
+      cSet(k, data, 60 * 60 * 1000);
+    }
+    if (!data.result || !data.data) return err(res, 'CJ product not found');
+    const p = data.data;
+    // Fetch variants
+    let variants = [];
     try {
-      const data = await cjDetail(prodM[1]);
-      const p = data.data || {};
-      return jsn(res, {
-        result: true,
-        product: {
-          pid: p.pid, name: p.productNameEn || p.productName,
-          description: (p.description || '').replace(/<[^>]*>/g, ''),
-          image: p.productImage || p.productImgUrl || null,
-          images: p.productImages || [p.productImage].filter(Boolean),
-          price: applyMarkup(parseFloat(p.sellPrice || p.productPrice || 0)),
-          wholesale: parseFloat(p.sellPrice || p.productPrice || 0),
-          category: guessCategory(p), stock: p.inventoryQuantity || 99,
-          cjUrl: `https://app.cjdropshipping.com/product-detail.html?id=${p.pid}`,
-        },
-      });
-    } catch (e) { return err(res, e.message); }
+      const vr = await cjReq('GET', '/api2.0/v1/product/variant/query?pid=' + pid, null, await cjToken());
+      variants = (vr.data && vr.data.variants) ? vr.data.variants : (Array.isArray(vr.data) ? vr.data : []);
+    } catch {}
+    return jsn(res, {
+      result: true,
+      product: shapeCJProduct(p, null),
+      variants,
+    });
   }
 
-  // ── POST /api/orders  — save new order from checkout ────────────────────
+  // ── POST /api/orders ──────────────────────────────────────────────────────
   if (pn === '/api/orders' && m === 'POST') {
     const b = await body(req);
     const required = ['id','customer_name','email','phone','address','city','country_code','items'];
     const missing = required.filter(k => !b[k] || (Array.isArray(b[k]) && !b[k].length));
     if (missing.length) return err(res, 'Missing: ' + missing.join(', '), 400);
+
+    // Enrich items with CJ PIDs from catalog if not already set
+    const items = b.items || [];
+    for (const item of items) {
+      if (!item.cj_pid && item.id) {
+        try {
+          const [rows] = await dbQuery('SELECT cj_pid, cj_vid FROM catalog WHERE id = ?', [item.id]);
+          if (rows.length) { item.cj_pid = rows[0].cj_pid; item.cj_vid = rows[0].cj_vid; }
+        } catch {}
+      }
+    }
 
     try {
       await dbQuery(
@@ -564,29 +442,23 @@ const server = http.createServer(async (req, res) => {
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')`,
         [
           b.id, b.customer_name, b.email, b.phone,
-          b.address, b.address2 || '',
-          b.city, b.province || '', b.zip || '',
+          b.address, b.address2 || '', b.city, b.province || '', b.zip || '',
           b.country_code, b.country || b.country_code,
-          JSON.stringify(b.items),
-          parseFloat(b.subtotal) || 0,
-          parseFloat(b.shipping_cost) || 0,
-          parseFloat(b.discount) || 0,
-          parseFloat(b.total) || 0,
+          JSON.stringify(items),
+          parseFloat(b.subtotal) || 0, parseFloat(b.shipping_cost) || 0,
+          parseFloat(b.discount) || 0, parseFloat(b.total) || 0,
         ]
       );
-      console.log('[Orders] Saved:', b.id, '|', b.customer_name, '|', b.total);
+      console.log('[Orders] Saved:', b.id, b.customer_name, '$' + b.total);
       return jsn(res, { result: true, orderId: b.id });
-    } catch (e) {
-      console.error('[Orders] Insert error:', e.message);
-      return err(res, e.message);
-    }
+    } catch (e) { console.error('[Orders] Error:', e.message); return err(res, e.message); }
   }
 
-  // ── GET /api/orders/:id  — order status lookup (tracking page) ───────────
-  const ordM = pn.match(/^\/api\/orders\/([^/]+)$/);
-  if (ordM && m === 'GET') {
+  // ── GET /api/orders/:id ───────────────────────────────────────────────────
+  const ordGet = pn.match(/^\/api\/orders\/([^/]+)$/);
+  if (ordGet && m === 'GET') {
     try {
-      const [rows] = await dbQuery('SELECT * FROM orders WHERE id = ?', [ordM[1]]);
+      const [rows] = await dbQuery('SELECT * FROM orders WHERE id = ?', [ordGet[1]]);
       if (!rows.length) return err(res, 'Order not found', 404);
       const o = rows[0];
       o.items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
@@ -595,10 +467,26 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ═══════════════════════════════════════════════════
-  // ADMIN ROUTES  (X-Admin-Key required)
+  // ADMIN ROUTES
   // ═══════════════════════════════════════════════════
 
-  // GET /api/admin/orders
+  if (!pn.startsWith('/api/admin/') && !pn.startsWith('/api/cj/')) {
+    // handled above or falls through to static
+  }
+
+  // ── GET /api/admin/stats ──────────────────────────────────────────────────
+  if (pn === '/api/admin/stats' && m === 'GET') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    try {
+      const [[rev]]     = await dbQuery('SELECT COALESCE(SUM(total),0) AS v FROM orders');
+      const [[total]]   = await dbQuery('SELECT COUNT(*) AS v FROM orders');
+      const [[pending]] = await dbQuery('SELECT COUNT(*) AS v FROM orders WHERE status IN ("pending","processing")');
+      const [[catalog]] = await dbQuery('SELECT COUNT(*) AS v FROM catalog WHERE active=1');
+      return jsn(res, { result: true, revenue: parseFloat(rev.v), orders: total.v, pending: pending.v, catalog: catalog.v });
+    } catch (e) { return err(res, e.message); }
+  }
+
+  // ── GET /api/admin/orders ─────────────────────────────────────────────────
   if (pn === '/api/admin/orders' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     const page   = Math.max(1, parseInt(q.page) || 1);
@@ -607,13 +495,11 @@ const server = http.createServer(async (req, res) => {
     const status = q.status || '';
     const search = q.search || '';
     try {
-      const pool = await getDb();
       let where = '1=1', params = [];
       if (status) { where += ' AND status = ?'; params.push(status); }
       if (search) {
         where += ' AND (id LIKE ? OR customer_name LIKE ? OR email LIKE ?)';
-        const s = '%' + search + '%';
-        params.push(s, s, s);
+        const s = '%' + search + '%'; params.push(s, s, s);
       }
       const [rows]    = await dbQuery(`SELECT * FROM orders WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`, params);
       const [[count]] = await dbQuery(`SELECT COUNT(*) AS n FROM orders WHERE ${where}`, params);
@@ -622,43 +508,88 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return err(res, e.message); }
   }
 
-  // GET /api/admin/stats
-  if (pn === '/api/admin/stats' && m === 'GET') {
-    if (!isAdmin) return err(res, 'Unauthorized', 401);
-    try {
-      const [[rev]]     = await dbQuery('SELECT COALESCE(SUM(total),0) AS v FROM orders');
-      const [[total]]   = await dbQuery('SELECT COUNT(*) AS v FROM orders');
-      const [[pending]] = await dbQuery('SELECT COUNT(*) AS v FROM orders WHERE status IN ("pending","processing")');
-      const [[unfulfilled]] = await dbQuery('SELECT COUNT(*) AS v FROM orders WHERE status = "pending"');
-      return jsn(res, {
-        result: true,
-        revenue:     parseFloat(rev.v),
-        orders:      total.v,
-        pending:     pending.v,
-        unfulfilled: unfulfilled.v,
-      });
-    } catch (e) { return err(res, e.message); }
-  }
-
-  // PUT /api/admin/orders/:id  — update status/tracking/notes
-  const adminOrdM = pn.match(/^\/api\/admin\/orders\/([^/]+)$/);
-  if (adminOrdM && m === 'PUT') {
+  // ── PUT /api/admin/orders/:id ─────────────────────────────────────────────
+  const adminOrd = pn.match(/^\/api\/admin\/orders\/([^/]+)$/);
+  if (adminOrd && m === 'PUT') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     const b = await body(req);
-    const allowed = ['status', 'tracking', 'tracking_url', 'notes'];
+    const allowed = ['status','tracking','tracking_url','fulfillment_error','cj_order_id'];
     const sets = [], vals = [];
-    for (const k of allowed) {
-      if (b[k] !== undefined) { sets.push(`${k} = ?`); vals.push(b[k]); }
-    }
+    for (const k of allowed) { if (b[k] !== undefined) { sets.push(k + ' = ?'); vals.push(b[k]); } }
     if (!sets.length) return err(res, 'Nothing to update', 400);
-    vals.push(adminOrdM[1]);
+    vals.push(adminOrd[1]);
+    try { await dbQuery('UPDATE orders SET ' + sets.join(', ') + ' WHERE id = ?', vals); return jsn(res, { result: true }); }
+    catch (e) { return err(res, e.message); }
+  }
+
+  // ── GET /api/admin/catalog ────────────────────────────────────────────────
+  if (pn === '/api/admin/catalog' && m === 'GET') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    const cat    = q.cat || '';
+    const search = q.search || '';
+    const page   = Math.max(1, parseInt(q.page) || 1);
+    const limit  = Math.min(100, parseInt(q.limit) || 50);
+    const offset = (page - 1) * limit;
     try {
-      await dbQuery(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, vals);
-      return jsn(res, { result: true });
+      let where = '1=1', params = [];
+      if (cat)    { where += ' AND category = ?'; params.push(cat); }
+      if (search) { where += ' AND name LIKE ?'; params.push('%'+search+'%'); }
+      const [rows]    = await dbQuery(`SELECT * FROM catalog WHERE ${where} ORDER BY featured DESC, sort_order ASC, created_at DESC LIMIT ${limit} OFFSET ${offset}`, params);
+      const [[count]] = await dbQuery(`SELECT COUNT(*) AS n FROM catalog WHERE ${where}`, params);
+      return jsn(res, { result: true, products: rows, total: count.n });
     } catch (e) { return err(res, e.message); }
   }
 
-  // GET /api/admin/settings
+  // ── POST /api/admin/catalog — add product to catalog ─────────────────────
+  if (pn === '/api/admin/catalog' && m === 'POST') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    const b = await body(req);
+    if (!b.cj_pid) return err(res, 'cj_pid required', 400);
+    if (!b.name)   return err(res, 'name required', 400);
+    const id = 'cat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    try {
+      await dbQuery(
+        `INSERT INTO catalog (id,cj_pid,cj_vid,name,description,image,images,category,price,orig_price,wholesale,badge,featured,active,weight_g,sort_order)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
+        [
+          id, b.cj_pid, b.cj_vid || null, b.name, b.description || null,
+          b.image || null, b.images ? JSON.stringify(b.images) : null,
+          b.category || 'dog',
+          parseFloat(b.price) || 0,
+          b.orig_price ? parseFloat(b.orig_price) : null,
+          b.wholesale ? parseFloat(b.wholesale) : null,
+          b.badge || null,
+          b.featured ? 1 : 0,
+          parseInt(b.weight_g) || 100,
+          parseInt(b.sort_order) || 0,
+        ]
+      );
+      return jsn(res, { result: true, id });
+    } catch (e) { return err(res, e.message); }
+  }
+
+  // ── PUT /api/admin/catalog/:id ────────────────────────────────────────────
+  const catAdmin = pn.match(/^\/api\/admin\/catalog\/([^/]+)$/);
+  if (catAdmin && m === 'PUT') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    const b = await body(req);
+    const allowed = ['name','description','image','category','price','orig_price','badge','featured','active','sort_order','cj_vid','weight_g'];
+    const sets = [], vals = [];
+    for (const k of allowed) { if (b[k] !== undefined) { sets.push(k + ' = ?'); vals.push(b[k]); } }
+    if (!sets.length) return err(res, 'Nothing to update', 400);
+    vals.push(catAdmin[1]);
+    try { await dbQuery('UPDATE catalog SET ' + sets.join(', ') + ' WHERE id = ?', vals); return jsn(res, { result: true }); }
+    catch (e) { return err(res, e.message); }
+  }
+
+  // ── DELETE /api/admin/catalog/:id ─────────────────────────────────────────
+  if (catAdmin && m === 'DELETE') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    try { await dbQuery('UPDATE catalog SET active = 0 WHERE id = ?', [catAdmin[1]]); return jsn(res, { result: true }); }
+    catch (e) { return err(res, e.message); }
+  }
+
+  // ── GET /api/admin/settings ───────────────────────────────────────────────
   if (pn === '/api/admin/settings' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     try {
@@ -669,27 +600,22 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return err(res, e.message); }
   }
 
-  // POST /api/admin/settings
+  // ── POST /api/admin/settings ──────────────────────────────────────────────
   if (pn === '/api/admin/settings' && m === 'POST') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     const b = await body(req);
     try {
-      const pool = await getDb();
       for (const [k, v] of Object.entries(b)) {
-        await dbQuery(
-          'INSERT INTO settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=?, ts=NOW()',
-          [k, String(v), String(v)]
-        );
+        await dbQuery('INSERT INTO settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=?, ts=NOW()', [k, String(v), String(v)]);
       }
       return jsn(res, { result: true });
     } catch (e) { return err(res, e.message); }
   }
 
-  // ── STATIC FILE SERVER ────────────────────────────────────────────────────
+  // ── STATIC FILE SERVER ─────────────────────────────────────────────────────
   let fp = path.join(STATIC_DIR, pn === '/' ? 'index.html' : pn).split('?')[0];
   if (!fp.startsWith(STATIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
   if (!path.extname(fp)) fp += '.html';
-
   fs.readFile(fp, (e, content) => {
     if (e) {
       if (e.code === 'ENOENT') { res.writeHead(404, { 'Content-Type': 'text/html' }); return res.end('<h1>404</h1><a href="/">Home</a>'); }
@@ -702,16 +628,14 @@ const server = http.createServer(async (req, res) => {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 async function start() {
-  try { await initTables(); }
-  catch (e) { console.error('[DB] Init failed — check env vars:', e.message); }
-
+  try { await initTables(); } catch (e) { console.error('[DB] Init failed:', e.message); }
   server.listen(PORT, async () => {
-    console.log(`\n🐾 Crittrly — http://localhost:${PORT}`);
-    console.log(`   DB:     ${DB_NAME} @ ${DB_HOST}`);
-    console.log(`   Static: ${STATIC_DIR}\n`);
+    console.log('\n🐾 Crittrly v4 — http://localhost:' + PORT);
+    console.log('   DB:     ' + DB_NAME + ' @ ' + (BRIDGE_URL ? 'bridge' : DB_HOST));
+    console.log('   Static: ' + STATIC_DIR + '\n');
     try { await cjToken(); } catch (e) { console.warn('[CJ]', e.message); }
   });
-  server.on('error', e => console.error('Server:', e.message));
+  server.on('error', e => console.error('Server error:', e.message));
 }
 
 start();
