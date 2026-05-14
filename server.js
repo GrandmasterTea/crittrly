@@ -33,6 +33,7 @@ const DB_PORT     = parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3
 const BRIDGE_URL  = process.env.BRIDGE_URL  || ''; // e.g. https://crittrly.com/db-bridge.php
 const BRIDGE_KEY  = process.env.BRIDGE_KEY  || 'change-this-to-something-secret-crittrly-2025';
 const ADMIN_KEY  = process.env.ADMIN_KEY   || 'crittrly-admin-2025';
+const MARKUP     = parseFloat(process.env.PRICE_MARKUP || '3.0');
 const CJ_API     = 'developers.cjdropshipping.com';
 const CACHE_TTL  = 25 * 60 * 1000;
 
@@ -264,18 +265,31 @@ function isPetProduct(p) {
   return PET_KEYWORDS.some(kw => text.includes(kw));
 }
 
+function applyMarkup(raw) {
+  if (!raw || raw <= 0) return 0;
+  // Multiply by MARKUP then round up to nearest .99
+  return Math.ceil(raw * MARKUP) - 0.01;
+}
+
 function shapeProduct(p, cat) {
+  const wholesale  = parseFloat(p.sellPrice || p.productPrice || 0);
+  const listPrice  = parseFloat(p.productPrice || 0);
+  const retail     = applyMarkup(wholesale);
+  // Show a crossed-out "was" price if CJ has a higher list price
+  const origRetail = listPrice > wholesale ? applyMarkup(listPrice) : null;
   return {
-    pid:     p.pid,
-    name:    p.productNameEn || p.productName || 'Product',
-    image:   p.productImage || p.productImgUrl || (p.productImages || [])[0] || null,
-    images:  p.productImages || [p.productImage].filter(Boolean),
-    price:   parseFloat(p.sellPrice || p.productPrice || 0),
-    category: cat || guessCategory(p),
-    stock:   p.inventoryQuantity || 99,
-    rating:  4.5 + Math.round(Math.random() * 5) / 10,
-    reviews: Math.floor(60 + Math.random() * 400),
-    cjUrl:   `https://app.cjdropshipping.com/product-detail.html?id=${p.pid}`,
+    pid:       p.pid,
+    name:      p.productNameEn || p.productName || 'Product',
+    image:     p.productImage || p.productImgUrl || (p.productImages || [])[0] || null,
+    images:    p.productImages || [p.productImage].filter(Boolean),
+    price:     retail,
+    origPrice: origRetail,
+    wholesale: wholesale, // admin reference only, never shown to customer
+    category:  cat || guessCategory(p),
+    stock:     p.inventoryQuantity || 99,
+    rating:    4.5 + Math.round(Math.random() * 5) / 10,
+    reviews:   Math.floor(60 + Math.random() * 400),
+    cjUrl:     `https://app.cjdropshipping.com/product-detail.html?id=${p.pid}`,
   };
 }
 
@@ -493,7 +507,8 @@ const server = http.createServer(async (req, res) => {
           description: (p.description || '').replace(/<[^>]*>/g, ''),
           image: p.productImage || p.productImgUrl || null,
           images: p.productImages || [p.productImage].filter(Boolean),
-          price: parseFloat(p.sellPrice || p.productPrice || 0),
+          price: applyMarkup(parseFloat(p.sellPrice || p.productPrice || 0)),
+          wholesale: parseFloat(p.sellPrice || p.productPrice || 0),
           category: guessCategory(p), stock: p.inventoryQuantity || 99,
           cjUrl: `https://app.cjdropshipping.com/product-detail.html?id=${p.pid}`,
         },
