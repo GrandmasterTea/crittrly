@@ -394,7 +394,7 @@ const server = http.createServer(async (req, res) => {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     const query = q.q || '';
     const page  = parseInt(q.page) || 1;
-    const limit = parseInt(q.limit) || 20;
+    const limit = Math.min(parseInt(q.limit) || 20, 100); // allow up to 100 for browse
     if (!query) return jsn(res, { result: true, products: [], total: 0 });
     try {
       const data = await cjSearch(query, page, limit);
