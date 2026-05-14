@@ -35,7 +35,7 @@ const BRIDGE_KEY  = process.env.BRIDGE_KEY  || 'change-this-to-something-secret-
 const ADMIN_KEY  = process.env.ADMIN_KEY   || 'crittrly-admin-2025';
 const MARKUP     = parseFloat(process.env.PRICE_MARKUP || '3.0');
 const CJ_API     = 'developers.cjdropshipping.com';
-const CACHE_TTL  = 25 * 60 * 1000;
+const CACHE_TTL  = 15 * 60 * 1000; // 15 min (reduced from 25 to refresh search results faster)
 
 // ── DATABASE ──────────────────────────────────────────────────────────────────
 // Supports two modes:
@@ -196,72 +196,76 @@ const cSet = (k, d, t) => _cache.set(k, { d, e: Date.now() + (t || CACHE_TTL) })
 // Specific CJ search terms per category — tight enough to avoid non-pet results
 const PET_Q = {
   dog: [
-    'dog chew toy', 'dog rope toy', 'dog harness', 'dog leash',
-    'dog food bowl', 'dog water fountain', 'dog bed mat', 'dog crate',
-    'dog training collar', 'puppy toy squeaky', 'dog grooming brush',
-    'dog automatic feeder', 'dog puzzle toy', 'dog carrier bag',
+    'dog toy', 'dog leash', 'dog harness', 'dog collar', 'dog bed',
+    'dog bowl', 'dog feeder', 'dog grooming', 'dog crate', 'dog treat',
+    'puppy toy', 'dog training', 'dog clothes', 'pet dog', 'dog brush',
   ],
   cat: [
-    'cat teaser wand toy', 'cat scratcher post', 'cat tree tower',
-    'cat litter box', 'cat automatic feeder', 'cat water fountain',
-    'cat window hammock', 'cat tunnel toy', 'cat ball toy',
-    'kitten toy interactive', 'cat grooming brush', 'cat carrier bag',
+    'cat toy', 'cat scratcher', 'cat tree', 'cat litter', 'cat feeder',
+    'cat fountain', 'cat bed', 'cat tunnel', 'cat collar', 'cat grooming',
+    'kitten toy', 'cat carrier', 'cat hammock', 'pet cat', 'cat brush',
   ],
   bird: [
-    'parrot bird toy', 'bird cage perch', 'bird swing toy',
-    'parrot foraging toy', 'bird feeder dish', 'bird mirror toy',
-    'cockatiel toy', 'bird cage accessory', 'parakeet toy',
+    'bird toy', 'bird cage', 'parrot toy', 'bird perch', 'bird feeder',
+    'bird swing', 'budgie toy', 'cockatiel toy', 'bird stand', 'bird mirror',
+    'parrot cage', 'bird accessory', 'bird food bowl', 'bird ladder', 'pet bird',
   ],
   reptile: [
-    'reptile terrarium decoration', 'reptile heat lamp', 'gecko hide cave',
-    'reptile water dish', 'lizard basking platform', 'reptile thermometer',
-    'snake hide box', 'reptile fogger mister', 'tortoise food dish',
+    'reptile', 'terrarium', 'gecko', 'lizard', 'snake', 'tortoise',
+    'turtle tank', 'reptile lamp', 'heat lamp reptile', 'terrarium decoration',
+    'reptile hide', 'reptile water', 'lizard cage', 'bearded dragon', 'reptile mat',
   ],
   fish: [
-    'aquarium fish decoration', 'fish tank ornament', 'aquarium led light',
-    'fish tank filter', 'aquarium air pump', 'fish tank heater',
-    'aquarium plant artificial', 'betta fish tank', 'aquarium gravel',
+    'aquarium', 'fish tank', 'aquarium light', 'fish tank filter', 'aquarium pump',
+    'aquarium decoration', 'fish tank heater', 'aquarium plant', 'betta fish',
+    'aquarium gravel', 'fish tank ornament', 'aquarium accessory', 'fish bowl', 'fish food', 'aquarium thermometer',
   ],
   small: [
-    'hamster exercise wheel', 'hamster hideout house', 'rabbit hay feeder',
-    'guinea pig hideout', 'hamster water bottle', 'small animal tunnel',
-    'rabbit chew toy', 'hamster bedding nest', 'guinea pig toy',
+    'hamster', 'rabbit cage', 'guinea pig', 'hamster wheel', 'hamster cage',
+    'small animal', 'rabbit toy', 'hamster hideout', 'guinea pig toy', 'ferret',
+    'hamster ball', 'rabbit hutch', 'gerbil cage', 'chinchilla', 'small pet',
   ],
   all: [
-    // Dogs
-    'dog chew toy', 'dog harness', 'dog leash', 'dog bed mat',
-    'dog food bowl', 'dog puzzle toy', 'dog grooming brush', 'dog automatic feeder',
-    // Cats
-    'cat scratcher post', 'cat teaser wand toy', 'cat tree tower',
-    'cat water fountain', 'cat window hammock', 'cat litter box',
-    // Birds
-    'parrot bird toy', 'bird cage perch', 'bird swing toy',
-    // Reptiles
-    'reptile terrarium decoration', 'reptile heat lamp', 'gecko hide cave',
-    // Fish
-    'aquarium fish decoration', 'fish tank ornament', 'aquarium led light',
-    // Small pets
-    'hamster exercise wheel', 'hamster hideout house', 'rabbit chew toy',
-    'guinea pig toy', 'small animal tunnel',
+    'dog toy', 'cat toy', 'bird cage', 'reptile', 'aquarium',
+    'hamster wheel', 'dog leash', 'cat scratcher', 'parrot toy', 'fish tank',
+    'guinea pig', 'dog harness', 'cat tree', 'bird perch', 'terrarium',
+    'rabbit cage', 'dog collar', 'cat litter', 'aquarium light', 'pet supplies',
   ],
 };
 
-// Keywords that must appear in product name/category for it to be considered pet-related
+// Per-category keyword filter — products must match at least one keyword for that category
+const CAT_KEYWORDS = {
+  dog:     ['dog','puppy','canine','hound'],
+  cat:     ['cat','kitten','feline'],
+  bird:    ['bird','parrot','budgie','cockatiel','parakeet','avian','feather'],
+  reptile: ['reptile','gecko','lizard','snake','tortoise','turtle','terrarium','vivarium','iguana','chameleon','bearded','dragon'],
+  fish:    ['fish','aquarium','tank','betta','goldfish','tropical','aquatic'],
+  small:   ['hamster','rabbit','guinea','gerbil','chinchilla','ferret','rat','mouse','small animal','small pet'],
+};
+
+// Global pet keywords — anything matching these is a valid pet product
 const PET_KEYWORDS = [
   'dog','cat','pet','puppy','kitten','bird','parrot','fish','aquarium',
-  'reptile','lizard','gecko','hamster','rabbit','guinea','tortoise',
-  'ferret','hedgehog','gerbil','chinchilla','cockatiel','parakeet',
-  'canary','turtle','snake','frog','leash','harness','litter','kibble',
-  'paw','tail','fur','feather','crate','kennel','hutch','vivarium',
+  'reptile','lizard','gecko','hamster','rabbit','guinea','tortoise','turtle',
+  'ferret','gerbil','chinchilla','cockatiel','parakeet','budgie','snake',
+  'leash','harness','litter','paw','crate','kennel','hutch','vivarium',
   'terrarium','perch','scratching','grooming','chew','squeaky','catnip',
+  'aquatic','betta','tropical','iguana','chameleon','bearded','dragon',
 ];
 
-function isPetProduct(p) {
+function isPetProduct(p, cat) {
   const text = [
     p.productNameEn || p.productName || '',
     p.categoryName || '',
     p.remark || '',
   ].join(' ').toLowerCase();
+
+  // If checking for a specific category, use that category's keywords
+  if (cat && CAT_KEYWORDS[cat]) {
+    return CAT_KEYWORDS[cat].some(kw => text.includes(kw));
+  }
+
+  // Otherwise use global pet keywords
   return PET_KEYWORDS.some(kw => text.includes(kw));
 }
 
@@ -393,13 +397,13 @@ const server = http.createServer(async (req, res) => {
         // Pull from ALL 6 categories in parallel — 2 items per cat = 12 total
         const CATS = ['dog','cat','bird','reptile','fish','small'];
         const perCat = Math.ceil(limit / CATS.length);
-        const offset = ((page - 1) * 2) % 4; // rotate which terms we use each page
+        const offset = ((page - 1) * 2) % 4;
 
         const catResults = await Promise.all(
           CATS.map(cat => {
             const terms = PET_Q[cat];
             const term  = terms[(offset + CATS.indexOf(cat)) % terms.length];
-            return cjSearch(term, 1, perCat * 4).catch(() => null);
+            return cjSearch(term, 1, perCat * 6).catch(() => null);
           })
         );
 
@@ -409,45 +413,57 @@ const server = http.createServer(async (req, res) => {
           const cat  = CATS[i];
           if (!data || !data.data) continue;
           let taken = 0;
+          // First pass: strict category filter
           for (const p of (data.data.list || [])) {
             if (seen.has(p.pid)) continue;
             seen.add(p.pid);
-            if (!isPetProduct(p)) continue;
+            if (!isPetProduct(p, cat)) continue;
             const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
             if (!img) continue;
             products.push(shapeProduct(p, cat));
             taken++;
             if (taken >= perCat) break;
           }
+          // Second pass: if short, take anything with an image
+          if (taken < perCat) {
+            for (const p of (data.data.list || [])) {
+              if (seen.has(p.pid)) continue;
+              seen.add(p.pid);
+              const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
+              if (!img) continue;
+              products.push(shapeProduct(p, cat));
+              taken++;
+              if (taken >= perCat) break;
+            }
+          }
         }
 
-        // Shuffle so it's not always dog/cat/bird/reptile/fish/small in order
+        // Shuffle
         for (let i = products.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [products[i], products[j]] = [products[j], products[i]];
         }
 
       } else {
-        // Single category — run 3 terms in parallel
+        // Single category — run 5 terms in parallel for better coverage
         const queries  = PET_Q[pet] || PET_Q.all;
-        const startIdx = ((page - 1) * 3) % queries.length;
-        const terms    = [
-          queries[startIdx % queries.length],
-          queries[(startIdx + 1) % queries.length],
-          queries[(startIdx + 2) % queries.length],
-        ];
+        const startIdx = ((page - 1) * 5) % queries.length;
+        const terms = [];
+        for (let i = 0; i < 5; i++) {
+          terms.push(queries[(startIdx + i) % queries.length]);
+        }
 
         const allResults = await Promise.all(
-          terms.map(term => cjSearch(term, 1, limit * 3).catch(() => null))
+          terms.map(term => cjSearch(term, 1, limit * 4).catch(() => null))
         );
 
-        // First pass — strict pet filter + image required
+        // First pass — category-specific keyword filter + image required
         for (const data of allResults) {
           if (!data || !data.data) continue;
           for (const p of (data.data.list || [])) {
             if (seen.has(p.pid)) continue;
             seen.add(p.pid);
-            if (!isPetProduct(p)) continue;
+            if (!isPetProduct(p, pet)) continue;
             const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
             if (!img) continue;
             products.push(shapeProduct(p, pet));
@@ -456,8 +472,25 @@ const server = http.createServer(async (req, res) => {
           if (products.length >= limit) break;
         }
 
-        // Second pass — if short, relax pet filter but keep image requirement
+        // Second pass — global pet filter (catches related products)
         if (products.length < limit) {
+          for (const data of allResults) {
+            if (!data || !data.data) continue;
+            for (const p of (data.data.list || [])) {
+              if (seen.has(p.pid)) continue;
+              seen.add(p.pid);
+              if (!isPetProduct(p, null)) continue;
+              const img = p.productImage || p.productImgUrl || (p.productImages || [])[0];
+              if (!img) continue;
+              products.push(shapeProduct(p, pet));
+              if (products.length >= limit) break;
+            }
+            if (products.length >= limit) break;
+          }
+        }
+
+        // Third pass — image only, no keyword filter (last resort for sparse categories)
+        if (products.length < Math.ceil(limit / 2)) {
           for (const data of allResults) {
             if (!data || !data.data) continue;
             for (const p of (data.data.list || [])) {
