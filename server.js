@@ -568,7 +568,7 @@ const server = http.createServer(async (req, res) => {
         `INSERT INTO catalog (id,cj_pid,cj_vid,cj_sku,name,description,image,images,category,price,orig_price,wholesale,badge,featured,active,weight_g,sort_order)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
         [
-          id, b.cj_pid, b.cj_vid || null, b.name, b.description || null,
+          id, b.cj_pid, b.cj_vid || null, b.cj_sku || null, b.name, b.description || null,
           b.image || null, b.images ? JSON.stringify(b.images) : null,
           b.category || 'dog',
           parseFloat(b.price) || 0,
