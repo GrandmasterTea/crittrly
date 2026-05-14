@@ -389,20 +389,49 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── GET /api/cj/search — browse CJ to find products to add ───────────────
-  // Used by admin "Browse CJ" panel only
+  // Paginates through ALL pages to return every result CJ has for the query
   if (pn === '/api/cj/search' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
-    const query = q.q || '';
-    const page  = parseInt(q.page) || 1;
-    const limit = Math.min(parseInt(q.limit) || 20, 100); // allow up to 100 for browse
+    const query   = q.q || '';
+    const maxResults = parseInt(q.limit) || 200; // how many total to return
     if (!query) return jsn(res, { result: true, products: [], total: 0 });
     try {
-      const data = await cjSearch(query, page, limit);
-      const list = (data.data && data.data.list) ? data.data.list : [];
-      const products = list
-        .filter(p => p.productImage || p.productImgUrl || (p.productImages && p.productImages[0]))
-        .map(p => shapeCJProduct(p, q.cat || null));
-      return jsn(res, { result: true, products, total: (data.data && data.data.total) || products.length });
+      const PAGE_SIZE = 50; // CJ max per page
+      const maxPages  = Math.ceil(maxResults / PAGE_SIZE);
+      const allProducts = [];
+      const seen = new Set();
+
+      // Fetch page 1 first to get total count
+      const first = await cjSearch(query, 1, PAGE_SIZE);
+      const total = (first.data && first.data.total) || 0;
+      const list1 = (first.data && first.data.list) || [];
+      for (const p of list1) {
+        if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
+      }
+
+      // Fetch remaining pages in parallel (up to maxPages)
+      const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), maxPages);
+      if (totalPages > 1) {
+        const pageNums = [];
+        for (let pg = 2; pg <= totalPages; pg++) pageNums.push(pg);
+        // Fetch in batches of 5 to avoid hammering CJ
+        for (let i = 0; i < pageNums.length; i += 5) {
+          const batch = pageNums.slice(i, i + 5);
+          const results = await Promise.all(
+            batch.map(pg => cjSearch(query, pg, PAGE_SIZE).catch(() => null))
+          );
+          for (const data of results) {
+            if (!data || !data.data || !data.data.list) continue;
+            for (const p of data.data.list) {
+              if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
+            }
+          }
+          if (allProducts.length >= maxResults) break;
+        }
+      }
+
+      console.log('[CJ Browse] "'+query+'" → '+allProducts.length+' products (CJ total: '+total+')');
+      return jsn(res, { result: true, products: allProducts.slice(0, maxResults), total });
     } catch (e) { return err(res, e.message); }
   }
 
