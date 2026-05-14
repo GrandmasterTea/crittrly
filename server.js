@@ -563,13 +563,55 @@ const server = http.createServer(async (req, res) => {
     if (!b.cj_pid) return err(res, 'cj_pid required', 400);
     if (!b.name)   return err(res, 'name required', 400);
     const id = 'cat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+
+    // Auto-fetch variant SKU from CJ if not provided
+    let cj_sku  = b.cj_sku  || null;
+    let cj_vid  = b.cj_vid  || null;
+    let images  = b.images  || [];
+
+    try {
+      const tok = await cjToken();
+
+      // Fetch variants to get the orderable SKU
+      const vr = await cjReq('GET', '/api2.0/v1/product/variant/query?pid=' + b.cj_pid, null, tok);
+      const variants = (vr.data && vr.data.variants)
+        ? vr.data.variants
+        : (Array.isArray(vr.data) ? vr.data : []);
+
+      if (variants.length > 0) {
+        const first = variants[0];
+        console.log('[Catalog] First variant fields:', JSON.stringify(first).substring(0, 400));
+        // Try all known CJ variant SKU field names
+        cj_sku = first.variantSku || first.sku || first.skuCode || first.productSku || first.variantCode || cj_sku;
+        cj_vid = first.vid || first.variantId || first.id || cj_vid;
+        console.log('[Catalog] PID', b.cj_pid, '→ variant SKU:', cj_sku, 'VID:', cj_vid, '('+variants.length+' variants)');
+      } else {
+        // No variants returned — use product SKU + "-default" suffix
+        if (cj_sku && !cj_sku.includes('-')) {
+          cj_sku = cj_sku + '-default';
+        }
+        console.log('[Catalog] PID', b.cj_pid, '→ no variants, SKU:', cj_sku);
+      }
+
+      // Also fetch product images if not provided
+      if (!images.length) {
+        const pr = await cjReq('GET', '/api2.0/v1/product/query?pid=' + b.cj_pid, null, tok);
+        if (pr.data && pr.data.productImages) {
+          images = pr.data.productImages;
+        }
+      }
+    } catch (e) {
+      console.warn('[Catalog] Variant fetch failed for', b.cj_pid, ':', e.message);
+      // Still save the product — just without variant SKU
+    }
+
     try {
       await dbQuery(
         `INSERT INTO catalog (id,cj_pid,cj_vid,cj_sku,name,description,image,images,category,price,orig_price,wholesale,badge,featured,active,weight_g,sort_order)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
         [
-          id, b.cj_pid, b.cj_vid || null, b.cj_sku || null, b.name, b.description || null,
-          b.image || null, b.images ? JSON.stringify(b.images) : null,
+          id, b.cj_pid, cj_vid, cj_sku, b.name, b.description || null,
+          b.image || null, images.length ? JSON.stringify(images) : null,
           b.category || 'dog',
           parseFloat(b.price) || 0,
           b.orig_price ? parseFloat(b.orig_price) : null,
@@ -580,7 +622,7 @@ const server = http.createServer(async (req, res) => {
           parseInt(b.sort_order) || 0,
         ]
       );
-      return jsn(res, { result: true, id });
+      return jsn(res, { result: true, id, cj_sku, cj_vid });
     } catch (e) { return err(res, e.message); }
   }
 
