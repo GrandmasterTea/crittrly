@@ -75,9 +75,22 @@ async function dbQuery(sql, params) {
       headers: { 'Content-Type': 'application/json', 'X-Bridge-Key': BRIDGE_KEY },
       body: JSON.stringify({ sql, params }),
     });
-    if (!res.ok) throw new Error('Bridge HTTP ' + res.status);
+    if (!res.ok) {
+      let errBody = '';
+      try { errBody = await res.text(); } catch {}
+      console.error('[Bridge] HTTP', res.status, '— response:', errBody.substring(0, 300));
+      // Try to parse error message from JSON response
+      try {
+        const errJson = JSON.parse(errBody);
+        throw new Error('Bridge error: ' + (errJson.error || errJson.sql || errBody.substring(0, 200)));
+      } catch {}
+      throw new Error('Bridge HTTP ' + res.status + ': ' + errBody.substring(0, 150));
+    }
     const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    if (data.error) {
+      console.error('[Bridge] SQL error:', data.error, '| SQL:', data.sql || '');
+      throw new Error(data.error);
+    }
     if (Array.isArray(data.rows)) return [data.rows];
     return [{ affectedRows: data.affected || 0, insertId: data.insertId || 0 }];
   }
