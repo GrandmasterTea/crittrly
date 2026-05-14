@@ -377,11 +377,12 @@ const server = http.createServer(async (req, res) => {
       if (!rows.length) return err(res, 'Not found', 404);
       const p = rows[0];
       return jsn(res, { result: true, product: {
-        id: p.id, pid: p.cj_pid, cj_pid: p.cj_pid, cj_vid: p.cj_vid,
+        id: p.id, pid: p.cj_pid, cj_pid: p.cj_pid, cj_vid: p.cj_vid, cj_sku: p.cj_sku,
         name: p.name, description: p.description, image: p.image,
         images: p.images ? JSON.parse(p.images) : [],
         price: parseFloat(p.price), origPrice: p.orig_price ? parseFloat(p.orig_price) : null,
         category: p.category, badge: p.badge,
+        weight_g: parseInt(p.weight_g) || 100,
         cjUrl: 'https://app.cjdropshipping.com/product-detail.html?id=' + p.cj_pid,
       }});
     } catch (e) { return err(res, e.message); }
