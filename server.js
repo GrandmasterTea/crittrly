@@ -121,6 +121,7 @@ async function initTables() {
       id          VARCHAR(40)   PRIMARY KEY,
       cj_pid      VARCHAR(100)  NOT NULL,
       cj_vid      VARCHAR(100)  DEFAULT NULL,
+      cj_sku      VARCHAR(100)  DEFAULT NULL,  -- CJ productSku e.g. CJNSSYWY01847
       name        VARCHAR(500)  NOT NULL,
       description TEXT          DEFAULT NULL,
       image       TEXT          DEFAULT NULL,
@@ -229,6 +230,7 @@ function shapeCJProduct(p, cat) {
     category:    cat || guessCategory(p),
     stock:       p.inventoryQuantity || 99,
     cjUrl:       'https://app.cjdropshipping.com/product-detail.html?id=' + p.pid,
+    sku:         p.productSku || p.sku || null,
     rating:      (4.5 + Math.round(Math.random() * 5) / 10),
     reviews:     Math.floor(60 + Math.random() * 400),
   };
@@ -335,6 +337,7 @@ const server = http.createServer(async (req, res) => {
         pid:       p.cj_pid,
         cj_pid:    p.cj_pid,
         cj_vid:    p.cj_vid,
+        cj_sku:    p.cj_sku,
         name:      p.name,
         image:     p.image,
         images:    p.images ? (typeof p.images === 'string' ? JSON.parse(p.images) : p.images) : [],
@@ -549,8 +552,8 @@ const server = http.createServer(async (req, res) => {
     const id = 'cat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
     try {
       await dbQuery(
-        `INSERT INTO catalog (id,cj_pid,cj_vid,name,description,image,images,category,price,orig_price,wholesale,badge,featured,active,weight_g,sort_order)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
+        `INSERT INTO catalog (id,cj_pid,cj_vid,cj_sku,name,description,image,images,category,price,orig_price,wholesale,badge,featured,active,weight_g,sort_order)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
         [
           id, b.cj_pid, b.cj_vid || null, b.name, b.description || null,
           b.image || null, b.images ? JSON.stringify(b.images) : null,
@@ -573,7 +576,7 @@ const server = http.createServer(async (req, res) => {
   if (catAdmin && m === 'PUT') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
     const b = await body(req);
-    const allowed = ['name','description','image','category','price','orig_price','badge','featured','active','sort_order','cj_vid','weight_g'];
+    const allowed = ['name','description','image','category','price','orig_price','badge','featured','active','sort_order','cj_vid','cj_sku','weight_g'];
     const sets = [], vals = [];
     for (const k of allowed) { if (b[k] !== undefined) { sets.push(k + ' = ?'); vals.push(b[k]); } }
     if (!sets.length) return err(res, 'Nothing to update', 400);
