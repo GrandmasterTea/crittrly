@@ -601,7 +601,11 @@ const server = http.createServer(async (req, res) => {
   // ── DELETE /api/admin/catalog/:id ─────────────────────────────────────────
   if (catAdmin && m === 'DELETE') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
-    try { await dbQuery('UPDATE catalog SET active = 0 WHERE id = ?', [catAdmin[1]]); return jsn(res, { result: true }); }
+    try {
+      await dbQuery('DELETE FROM catalog WHERE id = ?', [catAdmin[1]]);
+      console.log('[Catalog] Deleted product:', catAdmin[1]);
+      return jsn(res, { result: true });
+    }
     catch (e) { return err(res, e.message); }
   }
 
