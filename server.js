@@ -388,51 +388,52 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return err(res, e.message); }
   }
 
-  // ── GET /api/cj/search — browse CJ to find products to add ───────────────
-  // Paginates through ALL pages to return every result CJ has for the query
+  // ── GET /api/cj/search — browse CJ, paginate all pages up to limit ──────────
   if (pn === '/api/cj/search' && m === 'GET') {
     if (!isAdmin) return err(res, 'Unauthorized', 401);
-    const query   = q.q || '';
-    const maxResults = parseInt(q.limit) || 200; // how many total to return
+    const query      = q.q || '';
+    const maxResults = Math.min(parseInt(q.limit) || 500, 500);
     if (!query) return jsn(res, { result: true, products: [], total: 0 });
     try {
-      const PAGE_SIZE = 50; // CJ max per page
-      const maxPages  = Math.ceil(maxResults / PAGE_SIZE);
+      const PAGE_SIZE = 50;
       const allProducts = [];
       const seen = new Set();
+      const tok = await cjToken();
 
-      // Fetch page 1 first to get total count
-      const first = await cjSearch(query, 1, PAGE_SIZE);
+      // Direct CJ call bypassing cache for full pagination control
+      async function fetchPage(pageNum) {
+        const qs = new URLSearchParams({
+          pageNum, pageSize: PAGE_SIZE,
+          productNameEn: query, productType: 'ORDINARY_PRODUCT',
+        }).toString();
+        return cjReq('GET', '/api2.0/v1/product/list?' + qs, null, tok);
+      }
+
+      // Page 1 — get total
+      const first = await fetchPage(1);
       const total = (first.data && first.data.total) || 0;
-      const list1 = (first.data && first.data.list) || [];
-      for (const p of list1) {
+      for (const p of (first.data && first.data.list) || []) {
         if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
       }
+      console.log('[CJ Browse] "'+query+'" page 1/'+Math.ceil(total/PAGE_SIZE)+' total:'+total);
 
-      // Fetch remaining pages in parallel (up to maxPages)
-      const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), maxPages);
-      if (totalPages > 1) {
-        const pageNums = [];
-        for (let pg = 2; pg <= totalPages; pg++) pageNums.push(pg);
-        // Fetch in batches of 5 to avoid hammering CJ
-        for (let i = 0; i < pageNums.length; i += 5) {
-          const batch = pageNums.slice(i, i + 5);
-          const results = await Promise.all(
-            batch.map(pg => cjSearch(query, pg, PAGE_SIZE).catch(() => null))
-          );
-          for (const data of results) {
-            if (!data || !data.data || !data.data.list) continue;
-            for (const p of data.data.list) {
-              if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
-            }
+      // Remaining pages in parallel batches of 5
+      const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), Math.ceil(maxResults / PAGE_SIZE));
+      for (let i = 2; i <= totalPages && allProducts.length < maxResults; i += 5) {
+        const batch = [];
+        for (let pg = i; pg < i + 5 && pg <= totalPages; pg++) batch.push(pg);
+        const results = await Promise.all(batch.map(pg => fetchPage(pg).catch(() => null)));
+        for (const data of results) {
+          for (const p of (data && data.data && data.data.list) || []) {
+            if (!seen.has(p.pid)) { seen.add(p.pid); allProducts.push(shapeCJProduct(p, q.cat || null)); }
           }
-          if (allProducts.length >= maxResults) break;
         }
+        console.log('[CJ Browse] fetched up to page '+(i+4)+', products so far: '+allProducts.length);
       }
 
-      console.log('[CJ Browse] "'+query+'" → '+allProducts.length+' products (CJ total: '+total+')');
+      console.log('[CJ Browse] done: '+allProducts.length+' products returned');
       return jsn(res, { result: true, products: allProducts.slice(0, maxResults), total });
-    } catch (e) { return err(res, e.message); }
+    } catch (e) { console.error('[CJ Browse] error:', e.message); return err(res, e.message); }
   }
 
   // ── GET /api/cj/product/:pid — fetch a single CJ product detail ──────────
