@@ -240,8 +240,20 @@ function shapeCJProduct(p, cat) {
   return {
     pid:         p.pid,
     name:        (p.productNameEn || p.productName || 'Product').substring(0, 120),
-    image:       p.productImage || p.productImgUrl || p.imgUrl || (p.productImages && p.productImages[0]) || (p.variantImage) || null,
-    images:      p.productImages || p.images || [],
+    image:       (() => {
+      let img = p.productImage || p.productImgUrl || p.imgUrl || null;
+      if (img && img.startsWith('[')) {
+        try { const arr = JSON.parse(img); img = arr[0] || null; } catch {}
+      }
+      return img || (p.productImages && p.productImages[0]) || null;
+    })(),
+    images:      (() => {
+      let imgs = p.productImages || [];
+      if (!imgs.length && p.productImage && p.productImage.startsWith('[')) {
+        try { imgs = JSON.parse(p.productImage); } catch {}
+      }
+      return imgs;
+    })(),
     price:       applyMarkup(wholesale),
     origPrice:   list > wholesale ? applyMarkup(list) : null,
     wholesale,
