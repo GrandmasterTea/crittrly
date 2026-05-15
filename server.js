@@ -117,6 +117,7 @@ async function initTables() {
       subtotal      DECIMAL(10,2) DEFAULT 0,
       shipping_cost DECIMAL(10,2) DEFAULT 0,
       discount      DECIMAL(10,2) DEFAULT 0,
+      tax           DECIMAL(10,2) DEFAULT 0,
       total         DECIMAL(10,2) NOT NULL DEFAULT 0,
       status        VARCHAR(30)   NOT NULL DEFAULT 'pending',
       cj_order_id   VARCHAR(100)  DEFAULT NULL,
@@ -507,15 +508,15 @@ const server = http.createServer(async (req, res) => {
       await dbQuery(
         `INSERT INTO orders
            (id,customer_name,email,phone,address,address2,city,province,zip,
-            country_code,country,items,subtotal,shipping_cost,discount,total,status)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')`,
+            country_code,country,items,subtotal,shipping_cost,discount,tax,total,status)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')`,
         [
           b.id, b.customer_name, b.email, b.phone,
           b.address, b.address2 || '', b.city, b.province || '', b.zip || '',
           b.country_code, b.country || b.country_code,
           JSON.stringify(items),
           parseFloat(b.subtotal) || 0, parseFloat(b.shipping_cost) || 0,
-          parseFloat(b.discount) || 0, parseFloat(b.total) || 0,
+          parseFloat(b.discount) || 0, parseFloat(b.tax) || 0, parseFloat(b.total) || 0,
         ]
       );
       console.log('[Orders] Saved:', b.id, b.customer_name, '$' + b.total);
@@ -541,6 +542,22 @@ const server = http.createServer(async (req, res) => {
 
   if (!pn.startsWith('/api/admin/') && !pn.startsWith('/api/cj/')) {
     // handled above or falls through to static
+  }
+
+
+  // ── GET /api/admin/tax-log — Ohio tax collected ───────────────────────────
+  if (pn === '/api/admin/tax-log' && m === 'GET') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    const year  = q.year  || new Date().getFullYear();
+    const month = q.month || '';
+    try {
+      let where = "tax > 0 AND YEAR(created_at) = ?";
+      const params = [year];
+      if (month) { where += " AND MONTH(created_at) = ?"; params.push(month); }
+      const [rows]   = await dbQuery(`SELECT id, customer_name, email, province, created_at, subtotal, tax, total, status FROM orders WHERE ${where} ORDER BY created_at DESC`, params);
+      const [[totals]] = await dbQuery(`SELECT COALESCE(SUM(tax),0) AS total_tax, COALESCE(SUM(subtotal),0) AS total_taxable, COUNT(*) AS count FROM orders WHERE ${where}`, params);
+      return jsn(res, { result: true, orders: rows, total_tax: parseFloat(totals.total_tax), total_taxable: parseFloat(totals.total_taxable), count: totals.count });
+    } catch (e) { return err(res, e.message); }
   }
 
   // ── GET /api/admin/stats ──────────────────────────────────────────────────
