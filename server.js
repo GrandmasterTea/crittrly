@@ -356,6 +356,8 @@ const server = http.createServer(async (req, res) => {
         images:    p.images ? (typeof p.images === 'string' ? JSON.parse(p.images) : p.images) : [],
         price:     parseFloat(p.price),
         origPrice: p.orig_price ? parseFloat(p.orig_price) : null,
+        wholesale: p.wholesale ? parseFloat(p.wholesale) : null,
+        weight_g:  parseInt(p.weight_g) || 100,
         category:  p.category,
         badge:     p.badge,
         featured:  !!p.featured,
