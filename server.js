@@ -488,13 +488,17 @@ const server = http.createServer(async (req, res) => {
     const missing = required.filter(k => !b[k] || (Array.isArray(b[k]) && !b[k].length));
     if (missing.length) return err(res, 'Missing: ' + missing.join(', '), 400);
 
-    // Enrich items with CJ PIDs from catalog if not already set
+    // Enrich items with CJ PIDs and SKU from catalog if not already set
     const items = b.items || [];
     for (const item of items) {
-      if (!item.cj_pid && item.id) {
+      if (item.id) {
         try {
-          const [rows] = await dbQuery('SELECT cj_pid, cj_vid FROM catalog WHERE id = ?', [item.id]);
-          if (rows.length) { item.cj_pid = rows[0].cj_pid; item.cj_vid = rows[0].cj_vid; }
+          const [rows] = await dbQuery('SELECT cj_pid, cj_vid, cj_sku FROM catalog WHERE id = ?', [item.id]);
+          if (rows.length) {
+            if (!item.cj_pid) item.cj_pid = rows[0].cj_pid;
+            if (!item.cj_vid) item.cj_vid = rows[0].cj_vid;
+            if (!item.cj_sku) item.cj_sku = rows[0].cj_sku;
+          }
         } catch {}
       }
     }
