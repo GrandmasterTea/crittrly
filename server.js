@@ -491,7 +491,7 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/payment/create-intent' && m === 'POST') {
     if (!STRIPE_SK) return err(res, 'Stripe not configured', 500);
     const b = await body(req);
-    const amount = Math.round(parseFloat(b.amount) || 0); // already in cents from client
+    const amount = Math.round(parseFloat(b.amount) || 0); // cents from client
     if (amount < 50) return err(res, 'Amount too small', 400);
     try {
       const stripeRes = await fetch('https://api.stripe.com/v1/payment_intents', {
