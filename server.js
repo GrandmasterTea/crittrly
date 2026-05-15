@@ -378,8 +378,15 @@ const server = http.createServer(async (req, res) => {
         category:  p.category,
         badge:     p.badge,
         featured:  !!p.featured,
-        rating:    (4.5 + (parseInt(p.id, 36) % 5) / 10) || 4.7,
-        reviews:   (50 + (parseInt(p.id, 36) % 400)) || 120,
+        rating:    (() => {
+          // Varied but consistent per product — hash the ID to get 4.1–4.9
+          const h = p.id.split('').reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0)|0, 0);
+          return Math.round((4.1 + (Math.abs(h) % 9) / 10) * 10) / 10;
+        })(),
+        reviews:   (() => {
+          const h = p.id.split('').reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0)|0, 0);
+          return 47 + (Math.abs(h) % 754);
+        })(),
         cjUrl:     'https://app.cjdropshipping.com/product-detail.html?id=' + p.cj_pid,
         description: p.description || '',
       }));
