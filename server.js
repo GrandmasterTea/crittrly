@@ -240,8 +240,8 @@ function shapeCJProduct(p, cat) {
   return {
     pid:         p.pid,
     name:        (p.productNameEn || p.productName || 'Product').substring(0, 120),
-    image:       p.productImage || p.productImgUrl || (p.productImages || [])[0] || null,
-    images:      p.productImages || [],
+    image:       p.productImage || p.productImgUrl || p.imgUrl || (p.productImages && p.productImages[0]) || (p.variantImage) || null,
+    images:      p.productImages || p.images || [],
     price:       applyMarkup(wholesale),
     origPrice:   list > wholesale ? applyMarkup(list) : null,
     wholesale,
@@ -473,6 +473,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (!data.result || !data.data) return err(res, 'CJ product not found');
     const p = data.data;
+    console.log('[CJ Product] PID:', pid, 'image fields:', JSON.stringify({
+      productImage: p.productImage, productImgUrl: p.productImgUrl,
+      imgUrl: p.imgUrl, productImages: (p.productImages||[]).slice(0,1)
+    }));
     // Fetch variants
     let variants = [];
     try {
@@ -820,7 +824,7 @@ async function sendEmail(to, subject, html) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Crittrly Orders <orders@crittrly.com>',
+        from: 'Crittrly Orders <onboarding@resend.dev>',
         to: Array.isArray(to) ? to : [to],
         subject,
         html,
