@@ -50,6 +50,8 @@ const DB_PORT    = parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '33
 const BRIDGE_URL = process.env.BRIDGE_URL   || '';
 const BRIDGE_KEY = process.env.BRIDGE_KEY   || 'change-this-to-something-secret-crittrly-2025';
 const ADMIN_KEY  = process.env.ADMIN_KEY    || 'crittrly-admin-2025';
+const STRIPE_SK  = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_PK  = process.env.STRIPE_PUBLISHABLE_KEY || '';
 const MARKUP     = parseFloat(process.env.PRICE_MARKUP || '3.0');
 const CJ_HOST    = 'developers.cjdropshipping.com';
 const CACHE_TTL  = 20 * 60 * 1000;
@@ -120,6 +122,7 @@ async function initTables() {
       tax           DECIMAL(10,2) DEFAULT 0,
       total         DECIMAL(10,2) NOT NULL DEFAULT 0,
       status        VARCHAR(30)   NOT NULL DEFAULT 'pending',
+      stripe_payment_id VARCHAR(100) DEFAULT NULL,
       cj_order_id   VARCHAR(100)  DEFAULT NULL,
       tracking      VARCHAR(200)  DEFAULT NULL,
       tracking_url  VARCHAR(500)  DEFAULT NULL,
@@ -482,6 +485,40 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+
+  // ── POST /api/payment/create-intent ──────────────────────────────────────
+  if (pn === '/api/payment/create-intent' && m === 'POST') {
+    if (!STRIPE_SK) return err(res, 'Stripe not configured', 500);
+    const b = await body(req);
+    const amount = Math.round(parseFloat(b.amount) || 0); // already in cents from client
+    if (amount < 50) return err(res, 'Amount too small', 400);
+    try {
+      const stripeRes = await fetch('https://api.stripe.com/v1/payment_intents', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + STRIPE_SK,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          amount: amount.toString(),
+          currency: 'usd',
+          'automatic_payment_methods[enabled]': 'true',
+          description: 'Crittrly order ' + (b.orderId || ''),
+          'metadata[orderId]': b.orderId || '',
+          'metadata[customer]': b.customer || '',
+        }).toString(),
+      });
+      const intent = await stripeRes.json();
+      if (intent.error) return err(res, intent.error.message, 400);
+      return jsn(res, { result: true, clientSecret: intent.client_secret, intentId: intent.id });
+    } catch (e) { return err(res, e.message); }
+  }
+
+  // ── GET /api/payment/config ───────────────────────────────────────────────
+  if (pn === '/api/payment/config' && m === 'GET') {
+    return jsn(res, { result: true, publishableKey: STRIPE_PK });
+  }
+
   // ── POST /api/orders ──────────────────────────────────────────────────────
   if (pn === '/api/orders' && m === 'POST') {
     const b = await body(req);
@@ -508,8 +545,8 @@ const server = http.createServer(async (req, res) => {
       await dbQuery(
         `INSERT INTO orders
            (id,customer_name,email,phone,address,address2,city,province,zip,
-            country_code,country,items,subtotal,shipping_cost,discount,tax,total,status)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')`,
+            country_code,country,items,subtotal,shipping_cost,discount,tax,total,status,stripe_payment_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)`,
         [
           b.id, b.customer_name, b.email, b.phone,
           b.address, b.address2 || '', b.city, b.province || '', b.zip || '',
@@ -517,6 +554,7 @@ const server = http.createServer(async (req, res) => {
           JSON.stringify(items),
           parseFloat(b.subtotal) || 0, parseFloat(b.shipping_cost) || 0,
           parseFloat(b.discount) || 0, parseFloat(b.tax) || 0, parseFloat(b.total) || 0,
+          b.stripe_payment_id || null,
         ]
       );
       console.log('[Orders] Saved:', b.id, b.customer_name, '$' + b.total);
