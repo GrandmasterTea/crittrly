@@ -727,6 +727,66 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return err(res, e.message); }
   }
 
+
+  // ── POST /api/shipping/calculate — real CJ shipping cost for cart items ────
+  if (pn === '/api/shipping/calculate' && m === 'POST') {
+    try {
+      const b = await body(req);
+      const items       = b.items || [];       // [{id, cj_vid, qty}]
+      const countryCode = b.country_code || 'US';
+
+      // Look up cj_vid from catalog for any items missing it
+      const products = [];
+      for (const item of items) {
+        let vid = item.cj_vid || null;
+        if (!vid && item.id) {
+          try {
+            const [rows] = await dbQuery('SELECT cj_vid FROM catalog WHERE id = ?', [item.id]);
+            if (rows.length) vid = rows[0].cj_vid;
+          } catch {}
+        }
+        if (vid) products.push({ vid, quantity: item.qty || 1 });
+      }
+
+      if (!products.length) {
+        return jsn(res, { result: false, message: 'No variant IDs found for cart items', shipping: 4.50 });
+      }
+
+      const tok = await cjToken();
+      const payload = {
+        startCountryCode: 'CN',
+        endCountryCode:   countryCode,
+        products,
+      };
+
+      const data = await cjReq('POST', '/api2.0/v1/logistic/freightCalculate', payload, tok);
+      console.log('[Freight] Response:', JSON.stringify(data).substring(0, 300));
+
+      if (data.result && data.data && data.data.length > 0) {
+        // Find CJPacket first, then lowest cost option
+        const rates = data.data;
+        const cjpacket = rates.find(r => r.logisticName && r.logisticName.toLowerCase().includes('cjpacket'));
+        const lowest   = rates.reduce((a, b) => a.logisticPrice < b.logisticPrice ? a : b);
+        const chosen   = cjpacket || lowest;
+
+        console.log('[Freight] Chosen:', chosen.logisticName, '$'+chosen.logisticPrice, '('+chosen.logisticAging+' days)');
+        return jsn(res, {
+          result:   true,
+          shipping: parseFloat(chosen.logisticPrice),
+          method:   chosen.logisticName,
+          days:     chosen.logisticAging,
+          allRates: rates.map(r => ({ name: r.logisticName, price: r.logisticPrice, days: r.logisticAging })),
+        });
+      }
+
+      console.warn('[Freight] No rates returned:', JSON.stringify(data).substring(0, 200));
+      return jsn(res, { result: false, message: 'No rates available', shipping: 4.50 });
+    } catch (e) {
+      console.error('[Freight] Error:', e.message);
+      return jsn(res, { result: false, message: e.message, shipping: 4.50 });
+    }
+  }
+
   // ── STATIC FILE SERVER ─────────────────────────────────────────────────────
   let fp = path.join(STATIC_DIR, pn === '/' ? 'index.html' : pn).split('?')[0];
   if (!fp.startsWith(STATIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
