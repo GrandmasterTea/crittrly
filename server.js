@@ -51,6 +51,7 @@ const BRIDGE_URL = process.env.BRIDGE_URL   || '';
 const BRIDGE_KEY = process.env.BRIDGE_KEY   || 'change-this-to-something-secret-crittrly-2025';
 const ADMIN_KEY  = process.env.ADMIN_KEY    || 'crittrly-admin-2025';
 const STRIPE_SK  = process.env.STRIPE_SECRET_KEY || '';
+const RESEND_KEY  = process.env.RESEND_API_KEY || '';
 const STRIPE_PK  = process.env.STRIPE_PUBLISHABLE_KEY || '';
 const MARKUP     = parseFloat(process.env.PRICE_MARKUP || '3.0');
 const CJ_HOST    = 'developers.cjdropshipping.com';
@@ -558,6 +559,20 @@ const server = http.createServer(async (req, res) => {
         ]
       );
       console.log('[Orders] Saved:', b.id, b.customer_name, '$' + b.total);
+
+      // Send emails (non-blocking)
+      sendEmail(
+        b.email,
+        'Your Crittrly Order ' + b.id + ' is Confirmed!',
+        orderConfirmationHtml(b)
+      ).catch(e => console.warn('[Email] Customer email failed:', e.message));
+
+      sendEmail(
+        'hello@crittrly.com',
+        '🛒 New Order: ' + b.id + ' — $' + parseFloat(b.total).toFixed(2),
+        orderNotificationHtml(b)
+      ).catch(e => console.warn('[Email] Notification email failed:', e.message));
+
       return jsn(res, { result: true, orderId: b.id });
     } catch (e) { console.error('[Orders] Error:', e.message); return err(res, e.message); }
   }
@@ -792,6 +807,112 @@ const server = http.createServer(async (req, res) => {
       return jsn(res, { result: true });
     } catch (e) { return err(res, e.message); }
   }
+
+
+// ── EMAIL (Resend) ────────────────────────────────────────────────────────────
+async function sendEmail(to, subject, html) {
+  if (!RESEND_KEY) { console.warn('[Email] RESEND_API_KEY not set'); return; }
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + RESEND_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'Crittrly Orders <orders@crittrly.com>',
+        to: Array.isArray(to) ? to : [to],
+        subject,
+        html,
+      }),
+    });
+    const d = await r.json();
+    if (d.id) console.log('[Email] Sent to', to, '→', d.id);
+    else console.warn('[Email] Failed:', JSON.stringify(d));
+  } catch(e) { console.error('[Email] Error:', e.message); }
+}
+
+function orderConfirmationHtml(o) {
+  const items = typeof o.items === 'string' ? JSON.parse(o.items) : (o.items || []);
+  const itemRows = items.map(it =>
+    '<tr><td style="padding:8px 0;border-bottom:1px solid #eee;font-size:14px">' + (it.name||'') + ' × ' + (it.qty||1) + '</td>'
+    + '<td style="padding:8px 0;border-bottom:1px solid #eee;font-size:14px;text-align:right;font-weight:600">$' + ((parseFloat(it.price)||0)*(it.qty||1)).toFixed(2) + '</td></tr>'
+  ).join('');
+
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f5f0eb;font-family:'DM Sans',Arial,sans-serif">
+<div style="max-width:560px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
+  <div style="background:#1a1a1a;padding:28px 32px;text-align:center">
+    <h1 style="margin:0;font-size:22px;color:#fff;font-weight:800;letter-spacing:-.5px">Crittrly</h1>
+    <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,.5)">Premium Finds for Remarkable Pets</p>
+  </div>
+  <div style="padding:32px">
+    <h2 style="margin:0 0 8px;font-size:18px;color:#1a1a1a">Order Confirmed! 🐾</h2>
+    <p style="margin:0 0 24px;color:#666;font-size:14px">Hi ${o.customer_name}, thanks for your order. We'll get it on its way soon!</p>
+
+    <div style="background:#f5f0eb;border-radius:10px;padding:16px 20px;margin-bottom:24px">
+      <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Order ID</div>
+      <div style="font-size:16px;font-weight:700;color:#1a1a1a">${o.id}</div>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+      ${itemRows}
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      <tr><td style="padding:4px 0;font-size:13px;color:#666">Subtotal</td><td style="padding:4px 0;font-size:13px;text-align:right">$${parseFloat(o.subtotal||0).toFixed(2)}</td></tr>
+      ${parseFloat(o.tax||0) > 0 ? '<tr><td style="padding:4px 0;font-size:13px;color:#666">Tax</td><td style="padding:4px 0;font-size:13px;text-align:right">$' + parseFloat(o.tax).toFixed(2) + '</td></tr>' : ''}
+      <tr><td style="padding:4px 0;font-size:13px;color:#666">Shipping</td><td style="padding:4px 0;font-size:13px;text-align:right">$${parseFloat(o.shipping_cost||0).toFixed(2)}</td></tr>
+      <tr style="border-top:2px solid #eee">
+        <td style="padding:10px 0 4px;font-size:16px;font-weight:700">Total</td>
+        <td style="padding:10px 0 4px;font-size:16px;font-weight:700;text-align:right">$${parseFloat(o.total||0).toFixed(2)}</td>
+      </tr>
+    </table>
+
+    <div style="background:#f5f0eb;border-radius:10px;padding:16px 20px;margin-bottom:24px;font-size:13px;color:#666">
+      <strong style="color:#1a1a1a">Shipping to:</strong><br>
+      ${o.customer_name}<br>
+      ${o.address}${o.address2 ? ', ' + o.address2 : ''}<br>
+      ${o.city}, ${o.province} ${o.zip}<br>
+      ${o.country || o.country_code}
+    </div>
+
+    <p style="font-size:13px;color:#666;margin-bottom:24px">Your order will arrive in <strong>7–15 business days</strong> via tracked shipping. You'll receive a tracking number once it ships.</p>
+
+    <div style="text-align:center;margin-bottom:24px">
+      <a href="https://crittrly.com/tracking.html?id=${o.id}" style="display:inline-block;background:#e05c2a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:50px;font-weight:700;font-size:14px">Track Your Order →</a>
+    </div>
+
+    <p style="font-size:12px;color:#aaa;text-align:center;margin:0">Questions? Email <a href="mailto:hello@crittrly.com" style="color:#e05c2a">hello@crittrly.com</a></p>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+function orderNotificationHtml(o) {
+  const items = typeof o.items === 'string' ? JSON.parse(o.items) : (o.items || []);
+  const itemList = items.map(it => '• ' + (it.name||'') + ' × ' + (it.qty||1) + ' — SKU: ' + (it.cj_sku||'?')).join('<br>');
+  return `
+<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;padding:20px;color:#333">
+<h2>🛒 New Crittrly Order: ${o.id}</h2>
+<p><strong>Customer:</strong> ${o.customer_name} (${o.email})</p>
+<p><strong>Phone:</strong> ${o.phone||'—'}</p>
+<p><strong>Ship to:</strong> ${o.address}${o.address2?', '+o.address2:''}, ${o.city}, ${o.province} ${o.zip}, ${o.country||o.country_code}</p>
+<hr>
+<p><strong>Items:</strong><br>${itemList}</p>
+<hr>
+<p><strong>Subtotal:</strong> $${parseFloat(o.subtotal||0).toFixed(2)}</p>
+<p><strong>Shipping:</strong> $${parseFloat(o.shipping_cost||0).toFixed(2)}</p>
+${parseFloat(o.tax||0)>0?'<p><strong>Tax:</strong> $'+parseFloat(o.tax).toFixed(2)+'</p>':''}
+<p><strong>Total:</strong> $${parseFloat(o.total||0).toFixed(2)}</p>
+<hr>
+<p><a href="https://crittrly.com/admin.html">Open Admin Panel →</a></p>
+</body></html>`;
+}
 
 
   // ── POST /api/shipping/calculate — real CJ shipping cost for cart items ────
