@@ -577,6 +577,17 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return err(res, e.message); }
   }
 
+  // ── DELETE /api/admin/orders/:id ─────────────────────────────────────────
+  const adminOrdDel = pn.match(/^\/api\/admin\/orders\/([^/]+)$/);
+  if (adminOrdDel && m === 'DELETE') {
+    if (!isAdmin) return err(res, 'Unauthorized', 401);
+    try {
+      await dbQuery('DELETE FROM orders WHERE id = ?', [adminOrdDel[1]]);
+      console.log('[Orders] Deleted:', adminOrdDel[1]);
+      return jsn(res, { result: true });
+    } catch (e) { return err(res, e.message); }
+  }
+
   // ── PUT /api/admin/orders/:id ─────────────────────────────────────────────
   const adminOrd = pn.match(/^\/api\/admin\/orders\/([^/]+)$/);
   if (adminOrd && m === 'PUT') {
