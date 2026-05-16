@@ -331,6 +331,53 @@ const server = http.createServer(async (req, res) => {
 
   if (m === 'OPTIONS') { cors(res); res.writeHead(204); return res.end(); }
 
+  // ── POST /api/contact ─────────────────────────────────────────────────────
+  if (pn === '/api/contact' && m === 'POST') {
+    try {
+      const b = await body(req);
+      const { name, email, subject, message } = b;
+      if (!name || !email || !message) return err(res, 'Missing required fields', 400);
+
+      await sendEmail(
+        'hello@crittrly.com',
+        '📩 Contact Form: ' + (subject || 'Message from ' + name),
+        `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;padding:20px;color:#333">
+<h2>New Contact Form Submission</h2>
+<p><strong>Name:</strong> ${name}</p>
+<p><strong>Email:</strong> ${email}</p>
+<p><strong>Subject:</strong> ${subject || '—'}</p>
+<hr>
+<p><strong>Message:</strong></p>
+<p style="background:#f5f5f5;padding:14px;border-radius:8px;white-space:pre-wrap">${message}</p>
+<hr>
+<p style="color:#999;font-size:12px">Reply directly to: ${email}</p>
+</body></html>`
+      );
+
+      // Auto-reply to sender
+      await sendEmail(
+        email,
+        'We received your message — Crittrly',
+        `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;padding:20px;color:#333;max-width:560px;margin:0 auto">
+<div style="background:#1a1a18;padding:24px 32px;border-radius:12px 12px 0 0;text-align:center">
+  <h1 style="font-family:Georgia,serif;color:#fff;margin:0;font-size:1.6rem">Crittr<em style="color:#c4603a">ly</em></h1>
+</div>
+<div style="background:#fff;border:1px solid #eee;border-top:none;border-radius:0 0 12px 12px;padding:32px">
+  <h2 style="font-family:Georgia,serif;font-size:1.3rem;margin-bottom:12px">Hi ${name}, we got your message!</h2>
+  <p style="color:#666;line-height:1.7">Thanks for reaching out. We typically respond within 24 hours Monday–Friday.</p>
+  <p style="color:#666;line-height:1.7;margin-top:12px">In the meantime, feel free to browse our store or track an existing order.</p>
+  <div style="margin-top:24px;text-align:center">
+    <a href="https://crittrly.com/shop.html" style="background:#c4603a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:50px;font-weight:700;font-size:.9rem">Browse Products →</a>
+  </div>
+  <p style="color:#aaa;font-size:.78rem;text-align:center;margin-top:28px">hello@crittrly.com · crittrly.com</p>
+</div>
+</body></html>`
+      );
+
+      return jsn(res, { result: true });
+    } catch(e) { return err(res, e.message); }
+  }
+
   // ── GET /api/status ───────────────────────────────────────────────────────
   if (pn === '/api/status' && m === 'GET') {
     let catalogCount = 0;
