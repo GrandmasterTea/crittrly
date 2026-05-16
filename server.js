@@ -354,7 +354,7 @@ const server = http.createServer(async (req, res) => {
 </body></html>`
       );
 
-      // Auto-reply to sender
+      // Auto-reply to customer
       await sendEmail(
         email,
         'We received your message — Crittrly',
@@ -371,8 +371,8 @@ const server = http.createServer(async (req, res) => {
   </div>
   <p style="color:#aaa;font-size:.78rem;text-align:center;margin-top:28px">hello@crittrly.com · crittrly.com</p>
 </div>
-</body></html>`
-      );
+</body></html>\`
+      ).catch(e => console.warn('[Email] Auto-reply failed:', e.message));
 
       return jsn(res, { result: true });
     } catch(e) { return err(res, e.message); }
@@ -890,7 +890,7 @@ async function sendEmail(to, subject, html) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Crittrly Orders <onboarding@resend.dev>',
+        from: 'Crittrly <orders@crittrly.com>',
         to: Array.isArray(to) ? to : [to],
         subject,
         html,
