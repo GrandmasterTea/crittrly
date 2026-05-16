@@ -371,7 +371,7 @@ const server = http.createServer(async (req, res) => {
   </div>
   <p style="color:#aaa;font-size:.78rem;text-align:center;margin-top:28px">hello@crittrly.com · crittrly.com</p>
 </div>
-</body></html>\`
+</body></html>`
       ).catch(e => console.warn('[Email] Auto-reply failed:', e.message));
 
       return jsn(res, { result: true });
