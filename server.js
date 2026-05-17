@@ -378,6 +378,32 @@ const server = http.createServer(async (req, res) => {
     } catch(e) { return err(res, e.message); }
   }
 
+
+  // ── POST /api/translate ───────────────────────────────────────────────────
+  if (pn === '/api/translate' && m === 'POST') {
+    try {
+      const b = await body(req);
+      const { texts, lang } = b;
+      if (!texts || !lang) return err(res, 'Missing texts or lang', 400);
+
+      const results = await Promise.all(texts.map(async (text) => {
+        if (!text || text.trim().length < 2) return text;
+        try {
+          const r = await fetch(
+            'https://api.mymemory.translated.net/get?q=' +
+            encodeURIComponent(text.trim()) + '&langpair=en|' + lang
+          );
+          const d = await r.json();
+          const t = d && d.responseData && d.responseData.translatedText;
+          if (!t || t.includes('MYMEMORY WARNING')) return text;
+          return t;
+        } catch { return text; }
+      }));
+
+      return jsn(res, { result: true, translations: results });
+    } catch(e) { return err(res, e.message); }
+  }
+
   // ── GET /api/status ───────────────────────────────────────────────────────
   if (pn === '/api/status' && m === 'GET') {
     let catalogCount = 0;
