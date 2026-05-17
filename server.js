@@ -405,8 +405,6 @@ const server = http.createServer(async (req, res) => {
           return t.replace(/!{2,}/g, '!').replace(/\.{4,}/g, '...');
         } catch { return text; }
       }));
-        } catch { return text; }
-      }));
 
       return jsn(res, { result: true, translations: results });
     } catch(e) { return err(res, e.message); }
