@@ -389,14 +389,22 @@ const server = http.createServer(async (req, res) => {
       const results = await Promise.all(texts.map(async (text) => {
         if (!text || text.trim().length < 2) return text;
         try {
+          // Add context for very short phrases so MyMemory translates them properly
+          const isShort = text.trim().split(' ').length <= 3;
+          const query = isShort ? 'The phrase is: ' + text.trim() : text.trim();
           const r = await fetch(
             'https://api.mymemory.translated.net/get?q=' +
-            encodeURIComponent(text.trim()) + '&langpair=en|' + lang
+            encodeURIComponent(query) + '&langpair=en|' + lang
           );
           const d = await r.json();
-          const t = d && d.responseData && d.responseData.translatedText;
+          let t = d && d.responseData && d.responseData.translatedText;
           if (!t || t.includes('MYMEMORY WARNING')) return text;
-          return t;
+          // Strip the context prefix if it got translated with it
+          t = t.replace(/^(La frase es:|Der Satz lautet:|La phrase est:|La frase è:|A frase é:|De zin is:|Фраза:|Cümle:)\s*/i, '');
+          // Clean excess punctuation
+          return t.replace(/!{2,}/g, '!').replace(/\.{4,}/g, '...');
+        } catch { return text; }
+      }));
         } catch { return text; }
       }));
 
